@@ -1,4 +1,8 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from '../auth/dtos/register.dto';
@@ -43,6 +47,38 @@ export class UserService {
 
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
+  }
+
+  async findById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async updateRefreshToken(userId: string, refreshTokenHash: string | null) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        refreshToken: refreshTokenHash,
+      },
+    });
+  }
+
+  async getUserRoles(userId: string) {
+    const wsRoles = await this.prisma.workspaceMember.findMany({
+      where: { userId },
+      select: { workspaceId: true, role: true },
+    });
+
+    const channelRoles = await this.prisma.channelMember.findMany({
+      where: { userId },
+      select: { channelId: true, role: true },
+    });
+
+    return { wsRoles, channelRoles };
   }
 
   buildBaseUserResponse(user): UserResponseBaseDto {

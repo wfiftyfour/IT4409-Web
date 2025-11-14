@@ -31,6 +31,7 @@ export class RegisterDto {
 
   @IsNotEmpty()
   @IsDateString()
+  @ApiProperty()
   dateOfBirth: string;
 
   @IsOptional()

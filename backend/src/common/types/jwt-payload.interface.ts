@@ -1,6 +1,14 @@
 export interface JwtPayload {
   id: string;
   email: string;
-  rolesByWorkspace?: { wsId: string; role: string }[];
-  rolesByChannel?: { chId: string; role: string }[];
+
+  rolesByWorkspace: {
+    workspaceId: string;
+    role: string;
+  }[];
+
+  rolesByChannel: {
+    channelId: string;
+    role: string;
+  }[];
 }
