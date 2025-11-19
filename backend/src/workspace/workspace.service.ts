@@ -2,11 +2,14 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dtos/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dtos/update-workspace.dto';
 import { WorkspaceResponseDto } from './dtos/workspace-response.dto';
+import { WorkspaceMemberListResponseDto } from './dtos/workspace-member-response.dto';
+import { WorkspaceJoinRequestListResponseDto } from './dtos/workspace-join-request-response.dto';
 import { ROLES } from '../common/constants/roles.constant';
 import { randomBytes } from 'crypto';
 
@@ -145,5 +148,179 @@ export class WorkspaceService {
       myRole: membership.role?.name ?? null,
       memberCount: workspace.members.length,
     };
+  }
+
+  async getMembers(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceMemberListResponseDto> {
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: true, role: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    const totalCount = await this.prisma.workspaceMember.count({
+      where: { workspaceId },
+    });
+
+    const myMembership = members.find((m) => m.userId === userId);
+    if (!myMembership) {
+      throw new ForbiddenException(
+        'Bạn không có quyền xem thành viên workspace này',
+      );
+    }
+
+    return {
+      members: members.map((m) => ({
+        id: m.user.id,
+        name: m.user.username,
+        email: m.user.email,
+        avatarUrl: m.user.avatarUrl ?? undefined,
+        role: m.role.name,
+        joinedAt: m.joinedAt,
+      })),
+      totalCount,
+      myRole: myMembership.role.name,
+    };
+  }
+
+  async getJoinRequests(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceJoinRequestListResponseDto> {
+    const requests = await this.prisma.workspaceJoinRequest.findMany({
+      where: { workspaceId, status: 'PENDING' },
+      include: { user: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const totalCount = await this.prisma.workspaceJoinRequest.count({
+      where: { workspaceId, status: 'PENDING' },
+    });
+
+    const myMembership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      include: { role: true },
+    });
+
+    if (!myMembership || myMembership.role.name !== ROLES.WORKSPACE_ADMIN) {
+      throw new ForbiddenException(
+        'Bạn không có quyền xem yêu cầu tham gia workspace này',
+      );
+    }
+
+    return {
+      requests: requests.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        username: r.user.username,
+        email: r.user.email,
+        status: r.status,
+        createdAt: r.createdAt,
+      })),
+      totalCount,
+      myRole: myMembership.role.name,
+    };
+  }
+
+  async joinWorkspace(userId: string, joinCode: string) {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { joinCode },
+      include: { members: true },
+    });
+    if (!workspace) throw new NotFoundException('Workspace not found');
+
+    // Nếu user đã là thành viên thì return luôn
+    const existingMember = workspace.members.find((m) => m.userId === userId);
+    if (existingMember) {
+      return {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        status: 'APPROVED',
+      };
+    }
+
+    if (!workspace.isPrivate) {
+      // Public workspace: vào thẳng
+      const memberRole = await this.prisma.role.findUnique({
+        where: { name: 'WORKSPACE_MEMBER' },
+      });
+      if (!memberRole)
+        throw new NotFoundException('Role WORKSPACE_MEMBER not found');
+
+      await this.prisma.workspaceMember.create({
+        data: { workspaceId: workspace.id, userId, roleId: memberRole.id },
+      });
+
+      return {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        status: 'APPROVED',
+      };
+    }
+
+    // Private workspace: tạo request nếu chưa có
+    const existingRequest = await this.prisma.workspaceJoinRequest.findFirst({
+      where: { workspaceId: workspace.id, userId, status: 'PENDING' },
+    });
+
+    if (existingRequest) {
+      throw new BadRequestException(
+        'You already have a pending join request for this workspace',
+      );
+    }
+
+    const joinRequest = await this.prisma.workspaceJoinRequest.create({
+      data: { workspaceId: workspace.id, userId },
+    });
+
+    return {
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      status: joinRequest.status,
+    };
+  }
+
+  // Chấp nhận join request
+  async acceptRequest(workspaceId: string, requestId: string) {
+    const request = await this.prisma.workspaceJoinRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request || request.workspaceId !== workspaceId)
+      throw new NotFoundException('Request not found');
+
+    await this.prisma.workspaceJoinRequest.update({
+      where: { id: requestId },
+      data: { status: 'APPROVED' },
+    });
+
+    const memberRole = await this.prisma.role.findUnique({
+      where: { name: 'WORKSPACE_MEMBER' },
+    });
+    if (!memberRole)
+      throw new NotFoundException('Role WORKSPACE_MEMBER not found');
+
+    return this.prisma.workspaceMember.create({
+      data: {
+        workspaceId,
+        userId: request.userId,
+        roleId: memberRole.id,
+      },
+    });
+  }
+
+  // Từ chối join request
+  async rejectRequest(workspaceId: string, requestId: string) {
+    const request = await this.prisma.workspaceJoinRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request || request.workspaceId !== workspaceId)
+      throw new NotFoundException('Request not found');
+
+    return this.prisma.workspaceJoinRequest.update({
+      where: { id: requestId },
+      data: { status: 'REJECTED' },
+    });
   }
 }

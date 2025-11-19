@@ -33,8 +33,10 @@ model User {
   presence      UserPresence?
   workspaceMembers WorkspaceMember[]
   channelMembers   ChannelMember[]
-  joinRequestsSent JoinRequest[] @relation("JoinRequestUser")
-  joinRequestsReviewed JoinRequest[] @relation("JoinRequestReviewer")
+  channelJoinRequestsSent ChannelJoinRequest[] @relation("ChannelJoinRequestUser")
+  channelJoinRequestsReviewed ChannelJoinRequest[] @relation("ChannelJoinRequestReviewer")
+  workspaceJoinRequestSent WorkspaceJoinRequest[] @relation("WorkspaceJoinRequestUser")
+  workspaceJoinRequestReviewed WorkspaceJoinRequest[] @relation("WorkspaceJoinRequestReviewer")
   conversations    ConversationParticipant[]
   messagesSent     Message[]       @relation("SenderMessages")
   messagesDeleted  Message[]       @relation("DeletedMessages")
@@ -69,6 +71,8 @@ model Workspace {
 
   members     WorkspaceMember[]
   channels    Channel[]
+  joinRequests WorkspaceJoinRequest[]
+
 }
 
 model WorkspaceMember {
@@ -85,6 +89,26 @@ model WorkspaceMember {
   @@unique([workspaceId, userId])
 }
 
+model WorkspaceJoinRequest {
+  id         String    @id @default(uuid())
+  workspaceId  String
+  userId     String
+  status     String    @default("PENDING")
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+  reviewedBy String?
+
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user       User      @relation("WorkspaceJoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Relation với người review
+  reviewer   User?     @relation("WorkspaceJoinRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, userId, status])
+  @@index([status])
+}
+
+
 model Channel {
   id          String           @id @default(uuid())
   workspaceId String
@@ -97,7 +121,7 @@ model Channel {
 
   workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members     ChannelMember[]
-  joinRequests JoinRequest[]
+  joinRequests ChannelJoinRequest[]
   conversations Conversation[]
   posts       Post[]
   files       File[]
@@ -119,20 +143,20 @@ model ChannelMember {
   @@unique([channelId, userId])
 }
 
-model JoinRequest {
+model ChannelJoinRequest {
   id         String    @id @default(uuid())
   channelId  String
   userId     String
-  status     String    @default("pending")
+  status     String    @default("PENDING")
   createdAt  DateTime  @default(now())
   reviewedAt DateTime?
   reviewedBy String?
 
   channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user       User      @relation("JoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation("ChannelJoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
   
   // Relation với người review
-  reviewer   User?     @relation("JoinRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewer   User?     @relation("ChannelJoinRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
 
   @@index([channelId, userId, status])
   @@index([status])

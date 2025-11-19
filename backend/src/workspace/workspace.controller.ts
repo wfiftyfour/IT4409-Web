@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Body,
   Param,
   Req,
@@ -22,6 +23,8 @@ import { WorkspaceService } from './workspace.service';
 import { CreateWorkspaceDto } from './dtos/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dtos/update-workspace.dto';
 import { WorkspaceResponseDto } from './dtos/workspace-response.dto';
+import { WorkspaceMemberListResponseDto } from './dtos/workspace-member-response.dto';
+import { CreateWorkspaceJoinRequestDto } from './dtos/create-workspace-join-request.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -70,6 +73,7 @@ export class WorkspaceController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all workspaces for the current user' })
   @ApiResponse({
     status: 200,
@@ -80,27 +84,8 @@ export class WorkspaceController {
     return this.workspaceService.findAllByUser(req.user.id);
   }
 
-  @Get(':workspaceId')
-  @ApiOperation({ summary: 'Get workspace details by ID' })
-  @ApiParam({ name: 'workspaceId', description: 'ID of the workspace' })
-  @ApiResponse({
-    status: 200,
-    description: 'Workspace details',
-    type: WorkspaceResponseDto,
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'User does not have access to this workspace',
-  })
-  findOne(
-    @Req() req,
-    @Param('workspaceId') workspaceId: string,
-  ): Promise<WorkspaceResponseDto> {
-    return this.workspaceService.findOne(req.user.id, workspaceId);
-  }
-
   @Patch(':workspaceId')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, JwtAuthGuard)
   @Roles(ROLES.WORKSPACE_ADMIN)
   @ApiOperation({ summary: 'Update a workspace (ADMIN only)' })
   @ApiParam({
@@ -123,5 +108,74 @@ export class WorkspaceController {
     @Body() dto: UpdateWorkspaceDto,
   ): Promise<WorkspaceResponseDto> {
     return this.workspaceService.update(req.user.id, workspaceId, dto);
+  }
+
+  @Get('members')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.WORKSPACE_ADMIN)
+  async getMembers(
+    @Param('workspaceId') workspaceId: string,
+    @Req() req,
+  ): Promise<WorkspaceMemberListResponseDto> {
+    return this.workspaceService.getMembers(workspaceId, req.user.id);
+  }
+
+  // Join workspace request
+  @Post('join-requests')
+  @UseGuards(JwtAuthGuard)
+  async joinWorkspace(@Req() req, @Body() dto: CreateWorkspaceJoinRequestDto) {
+    return this.workspaceService.joinWorkspace(req.user.id, dto.joinCode);
+  }
+
+  // Get join requests
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get(':workspaceId/join-requests')
+  @Roles(ROLES.WORKSPACE_ADMIN)
+  async getJoinRequest(@Param('workspaceId') workspaceId: string, @Req() req) {
+    return this.workspaceService.getJoinRequests(workspaceId, req.user.id);
+  }
+
+  // Get workspace details
+  @Get(':workspaceId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.WORKSPACE_MEMBER, ROLES.WORKSPACE_ADMIN)
+  @ApiOperation({ summary: 'Get workspace details by ID' })
+  @ApiParam({ name: 'workspaceId', description: 'ID of the workspace' })
+  @ApiResponse({
+    status: 200,
+    description: 'Workspace details',
+    type: WorkspaceResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User does not have access to this workspace',
+  })
+  findOne(
+    @Req() req,
+    @Param('workspaceId') workspaceId: string,
+  ): Promise<WorkspaceResponseDto> {
+    return this.workspaceService.findOne(req.user.id, workspaceId);
+  }
+
+  // Accept request
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Put(':workspaceId/join-requests/:requestId/accept')
+  @Roles(ROLES.WORKSPACE_ADMIN)
+  async accept(
+    @Param('workspaceId') workspaceId: string,
+    @Param('requestId') requestId: string,
+  ) {
+    return this.workspaceService.acceptRequest(workspaceId, requestId);
+  }
+
+  // Reject request
+  @Put(':workspaceId/join-requests/:requestId/reject')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.WORKSPACE_ADMIN)
+  async reject(
+    @Param('workspaceId') workspaceId: string,
+    @Param('requestId') requestId: string,
+  ) {
+    return this.workspaceService.rejectRequest(workspaceId, requestId);
   }
 }

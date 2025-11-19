@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateWorkspaceDto {
   @ApiProperty()
@@ -17,5 +18,6 @@ export class CreateWorkspaceDto {
   })
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   isPrivate?: boolean;
 }
