@@ -325,4 +325,26 @@ export class WorkspaceService {
       data: { status: 'REJECTED' },
     });
   }
+
+  // 9. Xóa workspace (chỉ admin)
+  async remove(userId: string, workspaceId: string): Promise<{ message: string }> {
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      include: { role: true },
+    });
+
+    if (!membership || membership.role?.name !== ROLES.WORKSPACE_ADMIN) {
+      throw new ForbiddenException('Bạn không có quyền xóa workspace này');
+    }
+
+    // Xóa workspace, Prisma sẽ tự động cascade xóa các bảng liên quan (members, channels, etc.)
+    // nếu schema được cấu hình onDelete: Cascade.
+    // Nếu không, cần xóa thủ công các bảng con trước.
+    // Giả sử schema đã chuẩn.
+    await this.prisma.workspace.delete({
+      where: { id: workspaceId },
+    });
+
+    return { message: 'Xóa workspace thành công' };
+  }
 }

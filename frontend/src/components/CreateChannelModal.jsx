@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { createChannel } from "../api";
+import useAuth from "../hooks/useAuth";
 
 function CreateChannelModal({ workspaceId, onClose, onSuccess }) {
+  const { authFetch } = useAuth();
   const [formState, setFormState] = useState({
     name: "",
     description: "",
@@ -20,9 +21,12 @@ function CreateChannelModal({ workspaceId, onClose, onSuccess }) {
     setIsLoading(true);
 
     try {
-      const newChannel = await createChannel({
-        ...formState,
-        workspaceId,
+      const newChannel = await authFetch("/api/channels", {
+        method: "POST",
+        body: JSON.stringify({
+          ...formState,
+          workspaceId,
+        }),
       });
       onSuccess(newChannel);
     } catch (err) {

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
-import { getChannelDetails, getChannelMembers } from "../api";
 import useAuth from "../hooks/useAuth";
 import UpdateChannelModal from "./UpdateChannelModal";
 import AddChannelMemberModal from "./AddChannelMemberModal";
@@ -8,7 +7,7 @@ import AddChannelMemberModal from "./AddChannelMemberModal";
 function ChannelDetail() {
   const { channelId } = useParams();
   const { workspace } = useOutletContext(); // Passed from WorkspaceLayout
-  const { currentUser } = useAuth();
+  const { currentUser, authFetch } = useAuth();
   const [channel, setChannel] = useState(null);
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,8 +22,8 @@ function ChannelDetail() {
     setIsLoading(true);
     try {
       const [channelData, membersData] = await Promise.all([
-        getChannelDetails(channelId),
-        getChannelMembers(channelId),
+        authFetch(`/api/channels/${channelId}`),
+        authFetch(`/api/channels/${channelId}/members`),
       ]);
       setChannel(channelData);
       setMembers(membersData);

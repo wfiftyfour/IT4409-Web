@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Put,
+  Delete,
   Body,
   Param,
   Req,
@@ -177,5 +178,29 @@ export class WorkspaceController {
     @Param('requestId') requestId: string,
   ) {
     return this.workspaceService.rejectRequest(workspaceId, requestId);
+  }
+
+  // Delete a workspace
+  @Delete(':workspaceId')
+  @UseGuards(RolesGuard, JwtAuthGuard)
+  @Roles(ROLES.WORKSPACE_ADMIN)
+  @ApiOperation({ summary: 'Delete a workspace (ADMIN only)' })
+  @ApiParam({
+    name: 'workspaceId',
+    description: 'ID of the workspace to delete',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Workspace successfully deleted',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User does not have permission to delete this workspace',
+  })
+  remove(
+    @Req() req,
+    @Param('workspaceId') workspaceId: string,
+  ): Promise<{ message: string }> {
+    return this.workspaceService.remove(req.user.id, workspaceId);
   }
 }
