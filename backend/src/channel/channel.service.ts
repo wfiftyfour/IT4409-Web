@@ -25,6 +25,53 @@ export class ChannelService {
   }
 
   /**
+   * Kiểm tra xem user có quyền admin trong channel không
+   * User có quyền admin nếu:
+   * 1. Là CHANNEL_ADMIN của channel đó, HOẶC
+   * 2. Là WORKSPACE_ADMIN của workspace chứa channel đó
+   */
+  private async isChannelAdmin(
+    userId: string,
+    channelId: string,
+  ): Promise<boolean> {
+    // Lấy thông tin channel và workspace membership
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      include: {
+        members: {
+          where: { userId },
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!channel) return false;
+
+    // Check 1: User là CHANNEL_ADMIN của channel này
+    const channelMembership = channel.members.find((m) => m.userId === userId);
+    if (channelMembership?.role.name === ROLES.CHANNEL_ADMIN) {
+      return true;
+    }
+
+    // Check 2: User là WORKSPACE_ADMIN của workspace này
+    const workspaceMembership = await this.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: channel.workspaceId,
+          userId,
+        },
+      },
+      include: { role: true },
+    });
+
+    if (workspaceMembership?.role.name === ROLES.WORKSPACE_ADMIN) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Tạo Channel mới
    * Chỉ Workspace Admin hoặc Privilege Member mới có quyền
    */
@@ -173,11 +220,30 @@ export class ChannelService {
       throw new NotFoundException('Channel không tồn tại');
     }
 
-    // 2. Kiểm tra user có phải member của channel không
-    const membership = channel.members.find((m) => m.userId === userId);
+    // 2. Kiểm tra quyền xem
+    // User có quyền nếu: là channel member HOẶC là workspace admin
+    const channelMembership = channel.members.find((m) => m.userId === userId);
+    let userRole: string | null = null;
 
-    if (!membership) {
-      throw new ForbiddenException('Bạn không có quyền xem channel này');
+    if (channelMembership) {
+      userRole = channelMembership.role.name;
+    } else {
+      // Kiểm tra có phải Workspace Admin không
+      const workspaceMembership = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: channel.workspaceId,
+            userId,
+          },
+        },
+        include: { role: true },
+      });
+
+      if (workspaceMembership?.role.name === ROLES.WORKSPACE_ADMIN) {
+        userRole = ROLES.WORKSPACE_ADMIN;
+      } else {
+        throw new ForbiddenException('Bạn không có quyền xem channel này');
+      }
     }
 
     // 3. Trả về thông tin chi tiết
@@ -190,43 +256,27 @@ export class ChannelService {
       joinCode: channel.joinCode ?? undefined,
       createdAt: channel.createdAt,
       updatedAt: channel.updatedAt,
-      myRole: membership.role.name,
+      myRole: userRole,
       memberCount: channel.members.length,
     };
   }
 
   /**
    * Cập nhật Channel
-   * Chỉ Channel Admin mới có quyền
+   * Chỉ Channel Admin hoặc Workspace Admin mới có quyền
    */
   async update(
     userId: string,
     channelId: string,
     dto: UpdateChannelDto,
   ): Promise<ChannelResponseDto> {
-    // 1. Tìm channel
-    const channel = await this.prisma.channel.findUnique({
-      where: { id: channelId },
-      include: {
-        members: {
-          include: { role: true },
-        },
-      },
-    });
+    // 1. Kiểm tra quyền admin (Channel Admin hoặc Workspace Admin)
+    const hasAdminPermission = await this.isChannelAdmin(userId, channelId);
 
-    if (!channel) {
-      throw new NotFoundException('Channel không tồn tại');
-    }
-
-    // 2. Kiểm tra user có phải Channel Admin không
-    const membership = channel.members.find((m) => m.userId === userId);
-
-    if (!membership) {
-      throw new ForbiddenException('Bạn không thuộc channel này');
-    }
-
-    if (membership.role.name !== ROLES.CHANNEL_ADMIN) {
-      throw new ForbiddenException('Chỉ Channel Admin mới có quyền cập nhật');
+    if (!hasAdminPermission) {
+      throw new ForbiddenException(
+        'Chỉ Channel Admin hoặc Workspace Admin mới có quyền cập nhật',
+      );
     }
 
     // 3. Cập nhật channel (atomic update to prevent race condition)
@@ -289,32 +339,25 @@ export class ChannelService {
 
   /**
    * Xóa Channel
-   * Chỉ Channel Admin mới có quyền
+   * Chỉ Channel Admin hoặc Workspace Admin mới có quyền
    */
   async remove(userId: string, channelId: string): Promise<{ message: string }> {
-    // 1. Tìm channel
+    // 1. Kiểm tra channel tồn tại
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
-      include: {
-        members: {
-          include: { role: true },
-        },
-      },
     });
 
     if (!channel) {
       throw new NotFoundException('Channel không tồn tại');
     }
 
-    // 2. Kiểm tra user có phải Channel Admin không
-    const membership = channel.members.find((m) => m.userId === userId);
+    // 2. Kiểm tra quyền admin (Channel Admin hoặc Workspace Admin)
+    const hasAdminPermission = await this.isChannelAdmin(userId, channelId);
 
-    if (!membership) {
-      throw new ForbiddenException('Bạn không thuộc channel này');
-    }
-
-    if (membership.role.name !== ROLES.CHANNEL_ADMIN) {
-      throw new ForbiddenException('Chỉ Channel Admin mới có quyền xóa channel');
+    if (!hasAdminPermission) {
+      throw new ForbiddenException(
+        'Chỉ Channel Admin hoặc Workspace Admin mới có quyền xóa channel',
+      );
     }
 
     // 3. Xóa channel (cascade sẽ tự động xóa members, messages,...)
@@ -339,13 +382,10 @@ export class ChannelService {
   ): Promise<ChannelMemberResponseDto> {
     // Validation đã được xử lý ở DTO level với @ValidateIf
 
-    // 2. Tìm channel
+    // 1. Tìm channel và kiểm tra tồn tại
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
       include: {
-        members: {
-          include: { role: true },
-        },
         workspace: true,
       },
     });
@@ -354,16 +394,12 @@ export class ChannelService {
       throw new NotFoundException('Channel không tồn tại');
     }
 
-    // 3. Kiểm tra user có phải Channel Admin không
-    const adminMembership = channel.members.find((m) => m.userId === userId);
+    // 2. Kiểm tra quyền admin (Channel Admin hoặc Workspace Admin)
+    const hasAdminPermission = await this.isChannelAdmin(userId, channelId);
 
-    if (!adminMembership) {
-      throw new ForbiddenException('Bạn không thuộc channel này');
-    }
-
-    if (adminMembership.role.name !== ROLES.CHANNEL_ADMIN) {
+    if (!hasAdminPermission) {
       throw new ForbiddenException(
-        'Chỉ Channel Admin mới có quyền thêm thành viên',
+        'Chỉ Channel Admin hoặc Workspace Admin mới có quyền thêm thành viên',
       );
     }
 
@@ -456,7 +492,7 @@ export class ChannelService {
     channelId: string,
     memberId: string,
   ): Promise<{ message: string }> {
-    // 1. Tìm channel
+    // 1. Tìm channel và members để check admin count
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
       include: {
@@ -470,16 +506,12 @@ export class ChannelService {
       throw new NotFoundException('Channel không tồn tại');
     }
 
-    // 2. Kiểm tra user có phải Channel Admin không
-    const adminMembership = channel.members.find((m) => m.userId === userId);
+    // 2. Kiểm tra quyền admin (Channel Admin hoặc Workspace Admin)
+    const hasAdminPermission = await this.isChannelAdmin(userId, channelId);
 
-    if (!adminMembership) {
-      throw new ForbiddenException('Bạn không thuộc channel này');
-    }
-
-    if (adminMembership.role.name !== ROLES.CHANNEL_ADMIN) {
+    if (!hasAdminPermission) {
       throw new ForbiddenException(
-        'Chỉ Channel Admin mới có quyền xóa thành viên',
+        'Chỉ Channel Admin hoặc Workspace Admin mới có quyền xóa thành viên',
       );
     }
 
@@ -549,13 +581,29 @@ export class ChannelService {
       throw new NotFoundException('Channel không tồn tại');
     }
 
-    // 2. Kiểm tra user có phải member của channel không
-    const membership = channel.members.find((m) => m.userId === userId);
+    // 2. Kiểm tra quyền xem danh sách
+    // User có quyền nếu: là channel member HOẶC là workspace admin
+    const isChannelMember = channel.members.some((m) => m.userId === userId);
+    
+    if (!isChannelMember) {
+      // Kiểm tra có phải Workspace Admin không
+      const workspaceMembership = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: channel.workspaceId,
+            userId,
+          },
+        },
+        include: { role: true },
+      });
 
-    if (!membership) {
-      throw new ForbiddenException(
-        'Bạn phải là thành viên của channel để xem danh sách',
-      );
+      const isWorkspaceAdmin = workspaceMembership?.role.name === ROLES.WORKSPACE_ADMIN;
+
+      if (!isWorkspaceAdmin) {
+        throw new ForbiddenException(
+          'Bạn phải là thành viên của channel hoặc Workspace Admin để xem danh sách',
+        );
+      }
     }
 
     // 3. Trả về danh sách members

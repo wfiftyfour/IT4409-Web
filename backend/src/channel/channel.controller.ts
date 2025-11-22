@@ -93,7 +93,7 @@ export class ChannelController {
   @Get(':channelId')
   @ApiOperation({
     summary: 'Xem chi tiết channel',
-    description: 'Chỉ Channel Member hoặc Channel Admin mới xem được',
+    description: 'Chỉ Channel Member, Channel Admin, hoặc Workspace Admin mới xem được',
   })
   @ApiResponse({
     status: 200,
@@ -119,12 +119,12 @@ export class ChannelController {
   /**
    * PATCH /api/channels/:channelId
    * Cập nhật channel
-   * Chỉ Channel Admin
+   * Chỉ Channel Admin hoặc Workspace Admin
    */
   @Patch(':channelId')
   @ApiOperation({
     summary: 'Cập nhật tên hoặc mô tả channel',
-    description: 'Chỉ Channel Admin mới có quyền cập nhật channel',
+    description: 'Chỉ Channel Admin hoặc Workspace Admin mới có quyền cập nhật channel',
   })
   @ApiResponse({
     status: 200,
@@ -151,12 +151,12 @@ export class ChannelController {
   /**
    * DELETE /api/channels/:channelId
    * Xóa channel
-   * Chỉ Channel Admin
+   * Chỉ Channel Admin hoặc Workspace Admin
    */
   @Delete(':channelId')
   @ApiOperation({
     summary: 'Xóa channel khỏi workspace',
-    description: 'Chỉ Channel Admin mới có quyền xóa channel',
+    description: 'Chỉ Channel Admin hoặc Workspace Admin mới có quyền xóa channel',
   })
   @ApiResponse({
     status: 200,
@@ -193,7 +193,7 @@ export class ChannelController {
   @ApiOperation({
     summary: 'Thêm user vào channel',
     description:
-      'Chỉ Channel Admin mới có quyền. Có thể thêm bằng email hoặc userId. User phải là thành viên workspace trước.',
+      'Chỉ Channel Admin hoặc Workspace Admin mới có quyền. Có thể thêm bằng email hoặc userId. User phải là thành viên workspace trước.',
   })
   @ApiResponse({
     status: 201,
@@ -230,7 +230,7 @@ export class ChannelController {
   @ApiOperation({
     summary: 'Gỡ user ra khỏi channel',
     description:
-      'Chỉ Channel Admin mới có quyền. Không thể xóa Admin duy nhất.',
+      'Chỉ Channel Admin hoặc Workspace Admin mới có quyền. Không thể xóa Admin duy nhất.',
   })
   @ApiResponse({
     status: 200,
@@ -274,7 +274,7 @@ export class ChannelController {
   @Get(':channelId/members')
   @ApiOperation({
     summary: 'Lấy danh sách thành viên trong channel',
-    description: 'Chỉ Channel Member hoặc Channel Admin mới xem được',
+    description: 'Chỉ Channel Member, Channel Admin, hoặc Workspace Admin mới xem được',
   })
   @ApiResponse({
     status: 200,
