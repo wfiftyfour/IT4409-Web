@@ -3,6 +3,7 @@ import { createChannel } from "../api";
 import useAuth from "../hooks/useAuth";
 
 function CreateChannelModal({ workspaceId, onClose, onSuccess }) {
+  const { authFetch } = useAuth();
   const [formState, setFormState] = useState({
     name: "",
     description: "",
@@ -22,14 +23,13 @@ function CreateChannelModal({ workspaceId, onClose, onSuccess }) {
     setIsLoading(true);
 
     try {
-      // Pass authFetch to createChannel
-      const newChannel = await createChannel(
-        {
+      const newChannel = await authFetch("/api/channels", {
+        method: "POST",
+        body: JSON.stringify({
           ...formState,
           workspaceId,
-        },
-        authFetch
-      );
+        }),
+      });
       onSuccess(newChannel);
     } catch (err) {
       let errorMsg = err.message || "Không thể tạo channel";

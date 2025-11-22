@@ -7,12 +7,14 @@ import CreateChannelModal from "./CreateChannelModal";
 
 function WorkspaceLayout() {
   const { workspaceId } = useParams();
+  const { authFetch } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { authFetch } = useAuth(); // Use authFetch from useAuth
   const [workspace, setWorkspace] = useState(null);
   const [channels, setChannels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState(false);
 
   useEffect(() => {
@@ -21,16 +23,18 @@ function WorkspaceLayout() {
 
   const fetchData = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       // Use authFetch instead of request directly
       const [workspaceData, channelsData] = await Promise.all([
         authFetch(`/api/workspaces/${workspaceId}`),
-        getChannels(workspaceId, authFetch), // Pass authFetch to helper
+        authFetch(`/api/channels?workspaceId=${workspaceId}`),
       ]);
       setWorkspace(workspaceData);
       setChannels(channelsData);
     } catch (err) {
       console.error("Failed to fetch workspace data", err);
+      setError(err.message || "Có lỗi xảy ra khi tải dữ liệu");
       // If 403 or 404, maybe redirect to home
       if (err.status === 403 || err.status === 404) {
           navigate("/workspaces");
@@ -50,6 +54,20 @@ function WorkspaceLayout() {
      return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center flex-col gap-4 bg-white">
+        <p className="text-red-500 text-xl font-bold">Lỗi: {error}</p>
+        <button 
+          onClick={() => navigate("/workspaces")} 
+          className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-800"
+        >
+          Quay lại danh sách
+        </button>
       </div>
     );
   }
