@@ -74,3 +74,42 @@ export function resetPassword(token, newPassword) {
     body: JSON.stringify({ token, newPassword }),
   });
 }
+
+// Channel APIs
+export function getChannels(workspaceId) {
+  const queryString = workspaceId ? `?workspaceId=${workspaceId}` : "";
+  return request(`/api/channels${queryString}`);
+}
+
+export function getChannelDetails(channelId) {
+  return request(`/api/channels/${channelId}`);
+}
+
+export function createChannel(data) {
+  return request("/api/channels", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateChannel(channelId, data) {
+  return request(`/api/channels/${channelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function addChannelMember(channelId, data) {
+  return request(`/api/channels/${channelId}/members`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getChannelMembers(channelId) {
+  return request(`/api/channels/${channelId}/members`);
+}
+
+export function getWorkspaceMembers(workspaceId) {
+  return request(`/api/workspaces/${workspaceId}/members`);
+}
