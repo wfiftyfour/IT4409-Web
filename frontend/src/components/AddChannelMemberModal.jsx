@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { addChannelMember, getWorkspaceMembers, getChannelMembers } from "../api";
 import useAuth from "../hooks/useAuth";
 
@@ -13,28 +13,7 @@ function AddChannelMemberModal({ workspaceId, channelId, onClose, onSuccess }) {
   const [successMsg, setSuccessMsg] = useState("");
   const { authFetch } = useAuth(); // Get authFetch
 
-  useEffect(() => {
-    fetchMembers();
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!query) {
-      setFilteredMembers([]);
-      return;
-    }
-    const lowerQuery = query.toLowerCase();
-    const filtered = members
-      .filter((member) => !channelMembers.has(member.userId)) // Filter out existing members
-      .filter(
-        (member) =>
-          (member.fullName?.toLowerCase() || "").includes(lowerQuery) ||
-          (member.email?.toLowerCase() || "").includes(lowerQuery) ||
-          (member.username?.toLowerCase() || "").includes(lowerQuery)
-      );
-    setFilteredMembers(filtered);
-  }, [query, members, channelMembers]);
-
-  const fetchMembers = async () => {
+  const fetchMembers = useCallback(async () => {
     setIsLoading(true);
     try {
       // Use authFetch via helper functions
@@ -58,7 +37,31 @@ function AddChannelMemberModal({ workspaceId, channelId, onClose, onSuccess }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [workspaceId, channelId, authFetch]);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
+
+  // Filter members based on search query and exclude existing channel members
+  useEffect(() => {
+    if (!query.trim()) {
+      setFilteredMembers([]);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const filtered = members
+      .filter((member) => !channelMembers.has(member.userId)) // Filter out existing members
+      .filter(
+        (member) =>
+          member.fullName?.toLowerCase().includes(lowerQuery) ||
+          member.username?.toLowerCase().includes(lowerQuery) ||
+          member.email?.toLowerCase().includes(lowerQuery)
+      );
+
+    setFilteredMembers(filtered);
+  }, [query, members, channelMembers]);
 
   const handleAddMember = async (userId, email) => {
     setIsSubmitting(true);
@@ -104,7 +107,7 @@ function AddChannelMemberModal({ workspaceId, channelId, onClose, onSuccess }) {
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
-            aria-label="Close"
+            aria-label="Close modal"
           >
             <svg
               className="h-5 w-5"

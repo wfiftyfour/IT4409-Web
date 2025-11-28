@@ -1,23 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { removeChannelMember, getChannelMembers, updateChannelMemberRole } from "../api";
 import useAuth from "../hooks/useAuth";
+import { useToast } from "../contexts/ToastContext";
 
 function ChannelMembersModal({ channelId, onClose, onUpdate }) {
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const { authFetch, currentUser } = useAuth();
+  const { addToast } = useToast();
   
   // We need to know current user's role in the channel to show/hide admin controls
   // This info comes usually from getChannelMembers (if it includes role) or context.
   // Assuming getChannelMembers returns objects like { id, userId, role, user: {...} }
   const [myRole, setMyRole] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, [channelId]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
         const membersData = await getChannelMembers(channelId, authFetch);
@@ -31,7 +29,11 @@ function ChannelMembersModal({ channelId, onClose, onUpdate }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [channelId, authFetch, currentUser?.id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleRemoveMember = async (memberId) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa thành viên này khỏi channel?")) {
@@ -41,8 +43,9 @@ function ChannelMembersModal({ channelId, onClose, onUpdate }) {
       await removeChannelMember(channelId, memberId, authFetch);
       setMembers(members.filter(m => m.id !== memberId));
       if (onUpdate) onUpdate();
+      addToast("Đã xóa thành viên", "success");
     } catch (err) {
-      alert(err.message || "Không thể xóa thành viên");
+      addToast(err.message || "Không thể xóa thành viên", "error");
     }
   };
 
@@ -52,8 +55,9 @@ function ChannelMembersModal({ channelId, onClose, onUpdate }) {
         // Update local state
         setMembers(members.map(m => m.id === memberId ? { ...m, role: newRole, roleName: newRole } : m));
         if (onUpdate) onUpdate();
+        addToast("Đã cập nhật quyền thành viên", "success");
     } catch (err) {
-        alert(err.message || "Không thể cập nhật quyền");
+        addToast(err.message || "Không thể cập nhật quyền", "error");
     }
   };
 
@@ -69,6 +73,7 @@ function ChannelMembersModal({ channelId, onClose, onUpdate }) {
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            aria-label="Close modal"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useOutletContext, useNavigate } from "react-router-dom";
 import { leaveChannel } from "../api";
 import useAuth from "../hooks/useAuth";
@@ -20,11 +20,7 @@ function ChannelDetail() {
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isRequestsModalOpen, setIsRequestsModalOpen] = useState(false);
 
-  useEffect(() => {
-    fetchChannelData();
-  }, [channelId]);
-
-  const fetchChannelData = async (silent = false) => {
+  const fetchChannelData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
       // Use authFetch via helper functions
@@ -39,7 +35,11 @@ function ChannelDetail() {
     } finally {
       if (!silent) setIsLoading(false);
     }
-  };
+  }, [channelId, authFetch]);
+
+  useEffect(() => {
+    fetchChannelData();
+  }, [fetchChannelData]);
 
   const handleUpdateSuccess = (updatedChannel) => {
     setChannel(updatedChannel);

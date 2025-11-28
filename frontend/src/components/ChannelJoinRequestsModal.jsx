@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getChannelJoinRequests, approveChannelJoinRequest, rejectChannelJoinRequest } from "../api";
 import useAuth from "../hooks/useAuth";
 
@@ -8,11 +8,7 @@ function ChannelJoinRequestsModal({ channelId, onClose, onUpdate }) {
   const [error, setError] = useState("");
   const { authFetch } = useAuth();
 
-  useEffect(() => {
-    fetchRequests();
-  }, [channelId]);
-
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await getChannelJoinRequests(channelId, authFetch);
@@ -25,7 +21,11 @@ function ChannelJoinRequestsModal({ channelId, onClose, onUpdate }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [channelId, authFetch]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   const handleApprove = async (requestId) => {
     try {
@@ -56,6 +56,7 @@ function ChannelJoinRequestsModal({ channelId, onClose, onUpdate }) {
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            aria-label="Close modal"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

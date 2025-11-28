@@ -91,7 +91,7 @@ function UpdateChannelModal({ channel, onClose, onSuccess, onDelete }) {
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
-            aria-label="Close"
+            aria-label="Close modal"
           >
             <svg
               className="h-5 w-5"
