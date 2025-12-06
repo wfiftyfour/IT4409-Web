@@ -6,6 +6,8 @@ import UpdateChannelModal from "./UpdateChannelModal";
 import AddChannelMemberModal from "./AddChannelMemberModal";
 import ChannelMembersModal from "./ChannelMembersModal";
 import ChannelJoinRequestsModal from "./ChannelJoinRequestsModal";
+import ChannelFiles from "./ChannelFiles";
+import ChannelMeeting from "./ChannelMeeting";
 
 function ChannelDetail() {
   const { channelId } = useParams();
@@ -19,6 +21,8 @@ function ChannelDetail() {
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isRequestsModalOpen, setIsRequestsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("chat");
+  const [isInMeeting, setIsInMeeting] = useState(false); // Track if user is in a meeting
 
   const fetchChannelData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -86,7 +90,8 @@ function ChannelDetail() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
+      {/* Header - Hide when in meeting */}
+      {!isInMeeting && (
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-3">
         <div>
           <div className="flex items-center gap-2">
@@ -170,15 +175,80 @@ function ChannelDetail() {
             </button>
         </div>
       </div>
+      )}
 
-      {/* Main Content (Messages placeholder) */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="flex h-full items-center justify-center text-gray-400">
+      {/* Tabs */}
+      {!isInMeeting && (
+      <div className="border-b border-gray-200">
+        <nav className="flex -mb-px px-6">
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "chat"
+                ? "border-indigo-500 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            💬 Chat
+          </button>
+          <button
+            onClick={() => setActiveTab("meeting")}
+            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "meeting"
+                ? "border-indigo-500 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            🎥 Meeting
+          </button>
+          <button
+            onClick={() => setActiveTab("files")}
+            className={`py-4 px-6 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "files"
+                ? "border-indigo-500 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            📁 Files & Materials
+          </button>
+        </nav>
+      </div>
+      )}
+
+      {/* Main Content - Keep all tabs mounted to prevent unmounting */}
+      <div className="flex-1 overflow-hidden relative">
+        {/* Chat Tab */}
+        <div
+          className="h-full overflow-y-auto absolute inset-0"
+          style={{ display: activeTab === "chat" && !isInMeeting ? "block" : "none" }}
+        >
+          <div className="flex h-full items-center justify-center p-6 text-gray-400">
             <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-900">Welcome to #{channel.name}!</h3>
-                <p>This is the start of the {channel.name} channel.</p>
-                <p className="mt-2 text-sm text-gray-500">{members.length} members</p>
+              <h3 className="text-lg font-medium text-gray-900">Welcome to #{channel.name}!</h3>
+              <p>This is the start of the {channel.name} channel.</p>
+              <p className="mt-2 text-sm text-gray-500">{members.length} members</p>
             </div>
+          </div>
+        </div>
+
+        {/* Meeting Tab - Always mounted to keep video state */}
+        <div
+          className="h-full absolute inset-0"
+          style={{ display: activeTab === "meeting" || isInMeeting ? "block" : "none" }}
+        >
+          <ChannelMeeting
+            channelId={channelId}
+            isChannelAdmin={isChannelAdmin}
+            onMeetingStateChange={setIsInMeeting}
+          />
+        </div>
+
+        {/* Files Tab */}
+        <div
+          className="h-full overflow-y-auto absolute inset-0"
+          style={{ display: activeTab === "files" && !isInMeeting ? "block" : "none" }}
+        >
+          <ChannelFiles channelId={channelId} isChannelAdmin={isChannelAdmin} />
         </div>
       </div>
       
