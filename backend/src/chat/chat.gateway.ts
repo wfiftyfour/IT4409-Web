@@ -40,13 +40,13 @@ export class ChatGateway
 
   private logger = new Logger('ChatGateway');
   
-  // Track online users per channel: Map<channelId, Map<oderId, OnlineUser>>
+  // Track online users per channel: Map<channelId, Map<userId, OnlineUser>>
   private channelUsers = new Map<string, Map<string, OnlineUser>>();
   
   // Track which channels each socket is in: Map<socketId, Set<channelId>>
   private socketChannels = new Map<string, Set<string>>();
   
-  // Track userId to socketIds: Map<oderId, Set<socketId>>
+  // Track userId to socketIds: Map<userId, Set<socketId>>
   private userSockets = new Map<string, Set<string>>();
 
   constructor(
