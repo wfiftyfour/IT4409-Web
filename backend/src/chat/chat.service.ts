@@ -1100,7 +1100,7 @@ export class ChatService {
 
     // 4. Fetch all unread messages in a single query
     const conversationIds = participations.map((p) => p.conversation.id);
-    
+
     // Early return if no conversations
     if (conversationIds.length === 0) {
       return {
@@ -1108,7 +1108,7 @@ export class ChatService {
         total: 0,
       };
     }
-    
+
     const allUnreadMessages = await this.prisma.message.findMany({
       where: {
         conversationId: { in: conversationIds },
@@ -1271,6 +1271,11 @@ export class ChatService {
           participants: true,
         },
       });
+    }
+
+    // Đảm bảo conversation không null
+    if (!conversation) {
+      throw new NotFoundException('Không thể tạo hoặc tìm thấy conversation');
     }
 
     // 4. Kiểm tra replyToId nếu có
