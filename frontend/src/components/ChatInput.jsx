@@ -8,6 +8,7 @@ function ChatInput({
   onCancelReply,
   members = [],
   disabled = false,
+  placeholder = "Nhập tin nhắn... (@ để mention)",
 }) {
   const [content, setContent] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -222,7 +223,7 @@ function ChatInput({
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onBlur={onStopTyping}
-              placeholder="Nhập tin nhắn... (@ để mention)"
+              placeholder={placeholder}
               disabled={disabled}
               rows={1}
               className="w-full resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"

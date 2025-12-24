@@ -44,7 +44,8 @@ export class ChatController {
   @Get('conversation')
   @ApiOperation({
     summary: 'Lấy hoặc tạo conversation cho channel',
-    description: 'Trả về conversation hiện có hoặc tạo mới nếu chưa có. Chỉ member của channel mới có quyền truy cập.',
+    description:
+      'Trả về conversation hiện có hoặc tạo mới nếu chưa có. Chỉ member của channel mới có quyền truy cập.',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
   @ApiResponse({
@@ -75,7 +76,8 @@ export class ChatController {
   @Post('messages')
   @ApiOperation({
     summary: 'Gửi tin nhắn trong channel',
-    description: 'Gửi tin nhắn mới vào channel. Hỗ trợ reply, mention và đính kèm file.',
+    description:
+      'Gửi tin nhắn mới vào channel. Hỗ trợ reply, mention và đính kèm file.',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
   @ApiResponse({
@@ -111,13 +113,30 @@ export class ChatController {
   @Get('messages')
   @ApiOperation({
     summary: 'Lấy danh sách tin nhắn trong channel',
-    description: 'Lấy tin nhắn với pagination (offset hoặc cursor-based). Tin nhắn được sắp xếp theo thời gian (cũ nhất trước).',
+    description:
+      'Lấy tin nhắn với pagination (offset hoặc cursor-based). Tin nhắn được sắp xếp theo thời gian (cũ nhất trước).',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
-  @ApiQuery({ name: 'page', required: false, description: 'Số trang (mặc định 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Số tin nhắn mỗi trang (mặc định 50, tối đa 100)' })
-  @ApiQuery({ name: 'beforeId', required: false, description: 'Cursor: lấy tin nhắn trước messageId này' })
-  @ApiQuery({ name: 'afterId', required: false, description: 'Cursor: lấy tin nhắn sau messageId này' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Số trang (mặc định 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Số tin nhắn mỗi trang (mặc định 50, tối đa 100)',
+  })
+  @ApiQuery({
+    name: 'beforeId',
+    required: false,
+    description: 'Cursor: lấy tin nhắn trước messageId này',
+  })
+  @ApiQuery({
+    name: 'afterId',
+    required: false,
+    description: 'Cursor: lấy tin nhắn sau messageId này',
+  })
   @ApiResponse({
     status: 200,
     description: 'Danh sách tin nhắn',
@@ -147,7 +166,8 @@ export class ChatController {
   @Get('messages/:messageId')
   @ApiOperation({
     summary: 'Lấy chi tiết tin nhắn',
-    description: 'Lấy thông tin chi tiết của một tin nhắn bao gồm reactions, mentions, attachments.',
+    description:
+      'Lấy thông tin chi tiết của một tin nhắn bao gồm reactions, mentions, attachments.',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
   @ApiParam({ name: 'messageId', description: 'ID của tin nhắn' })
@@ -180,7 +200,8 @@ export class ChatController {
   @Delete('messages/:messageId')
   @ApiOperation({
     summary: 'Xóa tin nhắn',
-    description: 'Xóa tin nhắn (soft delete). Chỉ người gửi, Channel Admin hoặc Workspace Admin mới có quyền xóa.',
+    description:
+      'Xóa tin nhắn (soft delete). Chỉ người gửi, Channel Admin hoặc Workspace Admin mới có quyền xóa.',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
   @ApiParam({ name: 'messageId', description: 'ID của tin nhắn cần xóa' })
@@ -207,22 +228,23 @@ export class ChatController {
 
   /**
    * POST /api/channels/:channelId/chat/messages/:messageId/reactions
-   * Thêm reaction vào tin nhắn
+   * Toggle reaction vào tin nhắn
    */
   @Post('messages/:messageId/reactions')
   @ApiOperation({
-    summary: 'Thêm reaction vào tin nhắn',
-    description: 'Thêm emoji reaction vào tin nhắn. Mỗi user chỉ được reaction 1 lần với mỗi emoji.',
+    summary: 'Toggle reaction vào tin nhắn',
+    description:
+      'Toggle emoji reaction vào tin nhắn. Nếu user đã reaction với emoji này thì sẽ xóa reaction. Nếu chưa reaction thì sẽ thêm reaction mới. Response trả về "action" field để biết reaction đã được added hay removed.',
   })
   @ApiParam({ name: 'channelId', description: 'ID của channel' })
   @ApiParam({ name: 'messageId', description: 'ID của tin nhắn' })
   @ApiResponse({
     status: 201,
-    description: 'Thêm reaction thành công',
+    description: 'Toggle reaction thành công. Response chứa field "action" với giá trị "added" hoặc "removed"',
   })
   @ApiResponse({
     status: 400,
-    description: 'Đã reaction emoji này rồi hoặc tin nhắn đã bị xóa',
+    description: 'Tin nhắn đã bị xóa',
   })
   @ApiResponse({
     status: 403,
@@ -239,7 +261,12 @@ export class ChatController {
     @Body() addReactionDto: AddReactionDto,
   ): Promise<{ message: string }> {
     const userId = req.user.id;
-    return this.chatService.addReaction(userId, channelId, messageId, addReactionDto);
+    return this.chatService.addReaction(
+      userId,
+      channelId,
+      messageId,
+      addReactionDto,
+    );
   }
 
   /**
@@ -271,7 +298,12 @@ export class ChatController {
     const userId = req.user.id;
     // Decode emoji from URL (e.g., %F0%9F%91%8D -> 👍)
     const decodedEmoji = decodeURIComponent(emoji);
-    return this.chatService.removeReaction(userId, channelId, messageId, decodedEmoji);
+    return this.chatService.removeReaction(
+      userId,
+      channelId,
+      messageId,
+      decodedEmoji,
+    );
   }
 
   /**
@@ -305,4 +337,3 @@ export class ChatController {
     return this.chatService.markAsRead(userId, channelId);
   }
 }
-
