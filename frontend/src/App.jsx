@@ -11,6 +11,7 @@ import { ToastProvider } from "./contexts/ToastContext.jsx";
 import WorkspaceLayout from "./components/WorkspaceLayout.jsx";
 import ChannelDetail from "./components/ChannelDetail.jsx";
 import WorkspaceWelcome from "./components/WorkspaceWelcome.jsx";
+import DirectMessageChat from "./components/DirectMessageChat.jsx";
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
             <Route path="/workspace/:workspaceId" element={<WorkspaceLayout />}>
               <Route index element={<WorkspaceWelcome />} />
               <Route path="channel/:channelId" element={<ChannelDetail />} />
+              <Route path="dm/:conversationId" element={<DirectMessageChat />} />
             </Route>
             
             <Route path="/profile" element={<Profile />} />

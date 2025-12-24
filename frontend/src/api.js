@@ -245,3 +245,67 @@ export function getChatConversation(channelId, fetcher = request) {
   return fetcher(`/api/channels/${channelId}/chat/conversation`);
 }
 
+// ================== Direct Messaging APIs ==================
+
+// Get list of direct conversations in workspace
+export function getDirectConversations(workspaceId, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages`);
+}
+
+// Create or get direct conversation with another user
+export function getOrCreateDirectConversation(workspaceId, otherUserId, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations`, {
+    method: "POST",
+    body: JSON.stringify({ otherUserId }),
+  });
+}
+
+// Send direct message
+export function sendDirectMessage(workspaceId, data, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/send`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Get messages in direct conversation
+export function getDirectMessages(workspaceId, conversationId, params = {}, fetcher = request) {
+  const queryParams = new URLSearchParams();
+  if (params.page) queryParams.append("page", params.page);
+  if (params.limit) queryParams.append("limit", params.limit);
+  if (params.beforeId) queryParams.append("beforeId", params.beforeId);
+  if (params.afterId) queryParams.append("afterId", params.afterId);
+  
+  const queryString = queryParams.toString();
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/messages${queryString ? `?${queryString}` : ""}`);
+}
+
+// Delete direct message
+export function deleteDirectMessage(workspaceId, conversationId, messageId, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/messages/${messageId}`, {
+    method: "DELETE",
+  });
+}
+
+// Add reaction to direct message
+export function addDirectMessageReaction(workspaceId, conversationId, messageId, emoji, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/messages/${messageId}/reactions`, {
+    method: "POST",
+    body: JSON.stringify({ emoji }),
+  });
+}
+
+// Remove reaction from direct message
+export function removeDirectMessageReaction(workspaceId, conversationId, messageId, emoji, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {
+    method: "DELETE",
+  });
+}
+
+// Mark direct conversation as read
+export function markDirectConversationAsRead(workspaceId, conversationId, fetcher = request) {
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/mark-read`, {
+    method: "POST",
+  });
+}
+

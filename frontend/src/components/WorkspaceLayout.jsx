@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate, Outlet, useLocation } from "react-router-dom";
-import { getChannels } from "../api";
 import useAuth from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import UserMenu from "./UserMenu";
 import CreateChannelModal from "./CreateChannelModal";
 import JoinChannelModal from "./JoinChannelModal";
+import DirectMessageList from "./DirectMessageList";
 
 function WorkspaceLayout() {
   const { workspaceId } = useParams();
@@ -237,6 +237,17 @@ function WorkspaceLayout() {
               );
             })}
           </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-slate-800" />
+
+          {/* Direct Messages Section */}
+          <DirectMessageList
+            workspaceId={workspaceId}
+            onStartNewConversation={(conversation) => {
+              navigate(`/workspace/${workspaceId}/dm/${conversation.id}`);
+            }}
+          />
         </div>
 
         {/* User Menu */}
