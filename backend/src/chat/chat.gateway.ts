@@ -34,7 +34,8 @@ interface OnlineUser {
   namespace: '/chat',
 })
 export class ChatGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -53,7 +54,7 @@ export class ChatGateway
     private jwtService: JwtService,
     private prisma: PrismaService,
     private chatService: ChatService,
-  ) { }
+  ) {}
 
   afterInit() {
     this.logger.log('Chat WebSocket Gateway initialized');
@@ -821,10 +822,22 @@ export class ChatGateway
           (p) => p.userId !== user.id,
         );
         if (recipient) {
+          // Emit message notification
           this.emitToUser(recipient.userId, 'dm:message:notification', {
             conversationId: newMessage.conversationId,
             message: newMessage,
           });
+
+          // Also notify recipient to refresh conversation list
+          // so new conversation appears in their sidebar
+          this.emitToUser(recipient.userId, 'dm:conversation:updated', {
+            conversationId: newMessage.conversationId,
+            workspaceId: data.workspaceId,
+          });
+
+          this.logger.log(
+            `Emitted dm:conversation:updated to ${recipient.userId} for workspace ${data.workspaceId}`,
+          );
         }
       }
 
@@ -851,14 +864,16 @@ export class ChatGateway
   @SubscribeMessage('dm:message:delete')
   async handleDeleteDirectMessage(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { conversationId: string; messageId: string },
+    @MessageBody()
+    data: { workspaceId: string; conversationId: string; messageId: string },
   ) {
-    const { conversationId, messageId } = data;
+    const { workspaceId, conversationId, messageId } = data;
     const user = client.user;
 
     try {
       await this.chatService.deleteDirectMessage(
         user.id,
+        workspaceId,
         conversationId,
         messageId,
       );
@@ -892,17 +907,19 @@ export class ChatGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody()
     data: {
+      workspaceId: string;
       conversationId: string;
       messageId: string;
       reaction: AddReactionDto;
     },
   ) {
-    const { conversationId, messageId, reaction } = data;
+    const { workspaceId, conversationId, messageId, reaction } = data;
     const user = client.user;
 
     try {
       const result = await this.chatService.addDirectReaction(
         user.id,
+        workspaceId,
         conversationId,
         messageId,
         reaction,
@@ -947,14 +964,20 @@ export class ChatGateway
   async handleRemoveDirectReaction(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody()
-    data: { conversationId: string; messageId: string; emoji: string },
+    data: {
+      workspaceId: string;
+      conversationId: string;
+      messageId: string;
+      emoji: string;
+    },
   ) {
-    const { conversationId, messageId, emoji } = data;
+    const { workspaceId, conversationId, messageId, emoji } = data;
     const user = client.user;
 
     try {
       await this.chatService.removeDirectReaction(
         user.id,
+        workspaceId,
         conversationId,
         messageId,
         emoji,
@@ -1031,14 +1054,15 @@ export class ChatGateway
   @SubscribeMessage('dm:messages:read')
   async handleMarkDirectAsRead(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { conversationId: string },
+    @MessageBody() data: { workspaceId: string; conversationId: string },
   ) {
-    const { conversationId } = data;
+    const { workspaceId, conversationId } = data;
     const user = client.user;
 
     try {
       await this.chatService.markDirectConversationAsRead(
         user.id,
+        workspaceId,
         conversationId,
       );
 

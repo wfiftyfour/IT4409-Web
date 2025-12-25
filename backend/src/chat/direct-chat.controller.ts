@@ -188,11 +188,17 @@ export class DirectChatController {
   })
   async getDirectMessages(
     @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
     @Query() query: GetMessagesQueryDto,
   ): Promise<MessageListResponseDto> {
     const userId = req.user.id;
-    return this.chatService.getDirectMessages(userId, conversationId, query);
+    return this.chatService.getDirectMessages(
+      userId,
+      workspaceId,
+      conversationId,
+      query,
+    );
   }
 
   /**
@@ -222,12 +228,14 @@ export class DirectChatController {
   })
   async deleteDirectMessage(
     @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
-  ): Promise<{ message: string }> {
+  ): Promise<any> {
     const userId = req.user.id;
     return this.chatService.deleteDirectMessage(
       userId,
+      workspaceId,
       conversationId,
       messageId,
     );
@@ -248,7 +256,8 @@ export class DirectChatController {
   @ApiParam({ name: 'messageId', description: 'ID của tin nhắn' })
   @ApiResponse({
     status: 201,
-    description: 'Toggle reaction thành công. Response chứa field "action" với giá trị "added" hoặc "removed"',
+    description:
+      'Toggle reaction thành công. Response chứa field "action" với giá trị "added" hoặc "removed"',
   })
   @ApiResponse({
     status: 400,
@@ -264,6 +273,7 @@ export class DirectChatController {
   })
   async addReaction(
     @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
     @Body() addReactionDto: AddReactionDto,
@@ -271,6 +281,7 @@ export class DirectChatController {
     const userId = req.user.id;
     return this.chatService.addDirectReaction(
       userId,
+      workspaceId,
       conversationId,
       messageId,
       addReactionDto,
@@ -300,6 +311,7 @@ export class DirectChatController {
   })
   async removeReaction(
     @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
     @Param('emoji') emoji: string,
@@ -308,6 +320,7 @@ export class DirectChatController {
     const decodedEmoji = decodeURIComponent(emoji);
     return this.chatService.removeDirectReaction(
       userId,
+      workspaceId,
       conversationId,
       messageId,
       decodedEmoji,
@@ -340,11 +353,13 @@ export class DirectChatController {
   })
   async markAsRead(
     @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
     @Param('conversationId') conversationId: string,
   ): Promise<{ message: string }> {
     const userId = req.user.id;
     return this.chatService.markDirectConversationAsRead(
       userId,
+      workspaceId,
       conversationId,
     );
   }

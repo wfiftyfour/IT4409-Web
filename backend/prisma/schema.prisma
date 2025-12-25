@@ -74,7 +74,7 @@ model Workspace {
   members     WorkspaceMember[]
   channels    Channel[]
   joinRequests WorkspaceJoinRequest[]
-
+  conversations Conversation[]
 }
 
 model WorkspaceMember {
@@ -167,17 +167,20 @@ model ChannelJoinRequest {
 }
 
 model Conversation {
-  id         String    @id @default(uuid())
-  type       String
-  channelId  String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id          String     @id @default(uuid())
+  type        String
+  workspaceId String?
+  channelId   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  channel    Channel?  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id], onDelete: Cascade)
   participants ConversationParticipant[]
   messages     Message[]
 
   @@index([type])
+  @@index([workspaceId])
   @@index([channelId])
 }
 
@@ -404,4 +407,3 @@ model Otp {
   @@index([userId, expiresAt])
   @@index([otpCode, isUsed])
 }
-
