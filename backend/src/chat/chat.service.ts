@@ -31,7 +31,7 @@ import { ROLES } from '../common/constants/roles.constant';
 
 @Injectable()
 export class ChatService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   /**
    * Kiểm tra user có phải là member của channel không
@@ -965,31 +965,34 @@ export class ChatService {
       );
     }
 
-    // 3. Tìm conversation đã tồn tại (DIRECT type, không có channelId, có 2 participants cụ thể)
-    const existingConversations = await this.prisma.conversation.findMany({
+    // 3. Tìm conversation đã tồn tại (ensure workspaceId is set)
+    const conversations = await this.prisma.conversation.findMany({
       where: {
+        workspaceId: workspaceId, // Must match exactly, not null
         type: 'DIRECT',
         channelId: null,
+        participants: {
+          some: {
+            userId: userId,
+          },
+        },
       },
       include: {
         participants: true,
       },
     });
 
-    // Tìm conversation có đúng 2 participants là userId và otherUserId
-    const existingConversation = existingConversations.find((conv) => {
-      const participantIds = conv.participants.map((p) => p.userId);
-      return (
-        participantIds.length === 2 &&
-        participantIds.includes(userId) &&
-        participantIds.includes(otherUserId)
-      );
-    });
+    const existingConversation = conversations.find(
+      (c) =>
+        c.participants.length === 2 &&
+        c.participants.every((p) => [userId, otherUserId].includes(p.userId)),
+    );
 
     if (existingConversation) {
       return {
         id: existingConversation.id,
         type: existingConversation.type,
+        workspaceId: existingConversation.workspaceId ?? workspaceId,
         channelId: undefined,
         createdAt: existingConversation.createdAt,
         updatedAt: existingConversation.updatedAt,
@@ -1001,6 +1004,7 @@ export class ChatService {
       const conv = await tx.conversation.create({
         data: {
           type: 'DIRECT',
+          workspaceId,
           channelId: null,
         },
       });
@@ -1059,6 +1063,7 @@ export class ChatService {
       where: {
         userId,
         conversation: {
+          workspaceId,
           type: 'DIRECT',
           channelId: null,
         },
@@ -1090,15 +1095,7 @@ export class ChatService {
       },
     });
 
-    // 3. Filter: Chỉ lấy conversations có other user cũng trong workspace
-    const workspaceMembers = await this.prisma.workspaceMember.findMany({
-      where: { workspaceId },
-      select: { userId: true },
-    });
-
-    const workspaceMemberIds = new Set(workspaceMembers.map((m) => m.userId));
-
-    // 4. Fetch all unread messages in a single query
+    // 3. Fetch all unread messages in a single query
     const conversationIds = participations.map((p) => p.conversation.id);
 
     // Early return if no conversations
@@ -1151,9 +1148,6 @@ export class ChatService {
       );
 
       if (!otherParticipant) continue;
-
-      // Kiểm tra other participant có trong workspace không
-      if (!workspaceMemberIds.has(otherParticipant.userId)) continue;
 
       // Get unread count from map
       const unreadCount = unreadCountMap.get(conv.id) ?? 0;
@@ -1249,6 +1243,11 @@ export class ChatService {
         throw new NotFoundException('Conversation không tồn tại');
       }
 
+      // Ensure conversation belongs to this workspace
+      if (conversation.workspaceId !== workspaceId) {
+        throw new ForbiddenException('Conversation không thuộc workspace này');
+      }
+
       if (conversation.type !== 'DIRECT') {
         throw new BadRequestException('Conversation không phải loại DIRECT');
       }
@@ -1323,14 +1322,19 @@ export class ChatService {
       }
 
       // Cập nhật lastReadAt cho sender
-      await tx.conversationParticipant.update({
+      await tx.conversationParticipant.upsert({
         where: {
           conversationId_userId: {
             conversationId: conversation.id,
             userId,
           },
         },
-        data: {
+        update: {
+          lastReadAt: new Date(),
+        },
+        create: {
+          conversationId: conversation.id,
+          userId,
           lastReadAt: new Date(),
         },
       });
@@ -1378,6 +1382,7 @@ export class ChatService {
    */
   async getDirectMessages(
     userId: string,
+    workspaceId: string,
     conversationId: string,
     query: GetMessagesQueryDto,
   ): Promise<MessageListResponseDto> {
@@ -1391,6 +1396,11 @@ export class ChatService {
 
     if (!conversation) {
       throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Ensure conversation belongs to this workspace
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
     }
 
     if (conversation.type !== 'DIRECT') {
@@ -1497,6 +1507,7 @@ export class ChatService {
    */
   async markDirectConversationAsRead(
     userId: string,
+    workspaceId: string,
     conversationId: string,
   ): Promise<{ message: string }> {
     // 1. Kiểm tra conversation tồn tại
@@ -1509,6 +1520,11 @@ export class ChatService {
 
     if (!conversation) {
       throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Ensure conversation belongs to this workspace
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
     }
 
     if (conversation.type !== 'DIRECT') {
@@ -1546,6 +1562,7 @@ export class ChatService {
    */
   async deleteDirectMessage(
     userId: string,
+    workspaceId: string,
     conversationId: string,
     messageId: string,
   ): Promise<{ message: string }> {
@@ -1559,6 +1576,11 @@ export class ChatService {
 
     if (!conversation) {
       throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Ensure conversation belongs to this workspace
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
     }
 
     if (conversation.type !== 'DIRECT') {
@@ -1619,6 +1641,7 @@ export class ChatService {
    */
   async addDirectReaction(
     userId: string,
+    workspaceId: string,
     conversationId: string,
     messageId: string,
     dto: AddReactionDto,
@@ -1633,6 +1656,11 @@ export class ChatService {
 
     if (!conversation) {
       throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Ensure conversation belongs to this workspace
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
     }
 
     if (conversation.type !== 'DIRECT') {
@@ -1710,6 +1738,7 @@ export class ChatService {
    */
   async removeDirectReaction(
     userId: string,
+    workspaceId: string,
     conversationId: string,
     messageId: string,
     emoji: string,
@@ -1724,6 +1753,11 @@ export class ChatService {
 
     if (!conversation) {
       throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Ensure conversation belongs to this workspace
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
     }
 
     if (conversation.type !== 'DIRECT') {

@@ -138,6 +138,9 @@ export class ConversationResponseDto {
   @ApiPropertyOptional({ description: 'ID channel (nếu là channel chat)' })
   channelId?: string;
 
+  @ApiPropertyOptional({ description: 'ID workspace (nếu là direct chat)' })
+  workspaceId?: string;
+
   @ApiProperty({ description: 'Thời gian tạo' })
   createdAt: Date;
 

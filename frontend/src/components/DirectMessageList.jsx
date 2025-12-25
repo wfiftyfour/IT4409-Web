@@ -2,13 +2,18 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getDirectConversations, getWorkspaceMembers } from "../api";
 import useAuth from "../hooks/useAuth";
+import { useDMSocket } from "../hooks/useDMSocket";
 
 function DirectMessageList({ workspaceId, onStartNewConversation }) {
   const { conversationId } = useParams();
-  const { authFetch } = useAuth();
+  const { accessToken, authFetch } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showNewDMModal, setShowNewDMModal] = useState(false);
+
+  // Initialize socket connection to listen for DM updates
+  // Pass dummy conversationId since we're not joining a specific conversation
+  useDMSocket(accessToken, null, workspaceId);
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -26,6 +31,42 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
       fetchConversations();
     }
   }, [workspaceId, fetchConversations]);
+
+  // Listen for conversation updates (new message from someone not in list yet)
+  useEffect(() => {
+    const handleConversationUpdated = (event) => {
+      console.log(
+        "DirectMessageList: Received conversation update:",
+        event.detail
+      );
+      // When a new conversation is created or updated, refresh the list
+      if (event.detail.workspaceId === workspaceId) {
+        console.log(
+          "DirectMessageList: Refreshing conversations for workspace:",
+          workspaceId
+        );
+        // Call fetch directly instead of using callback to avoid dependency issues
+        getDirectConversations(workspaceId, authFetch)
+          .then((data) => {
+            setConversations(data.conversations || []);
+          })
+          .catch((err) => {
+            console.error("Failed to refresh DM conversations:", err);
+          });
+      }
+    };
+
+    window.addEventListener(
+      "dm:conversation:updated",
+      handleConversationUpdated
+    );
+    return () => {
+      window.removeEventListener(
+        "dm:conversation:updated",
+        handleConversationUpdated
+      );
+    };
+  }, [workspaceId, authFetch]);
 
   // Format time ago
   const formatTimeAgo = (dateString) => {
@@ -48,7 +89,10 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
     return (
       <div className="space-y-2 px-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="animate-pulse flex items-center gap-2 px-2 py-2">
+          <div
+            key={i}
+            className="animate-pulse flex items-center gap-2 px-2 py-2"
+          >
             <div className="h-8 w-8 rounded-full bg-slate-700" />
             <div className="flex-1">
               <div className="h-3 w-24 bg-slate-700 rounded mb-1" />
@@ -65,8 +109,18 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
       {/* Header with New DM button */}
       <div className="mb-2 flex items-center justify-between px-2">
         <span className="flex items-center text-sm font-medium text-slate-400">
-          <svg className="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <svg
+            className="mr-1 h-3 w-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
           Tin nhắn
         </span>
@@ -75,8 +129,18 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
           className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
           title="Tin nhắn mới"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
           </svg>
         </button>
       </div>
@@ -96,7 +160,7 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
         conversations.map((conv) => {
           const isActive = conversationId === conv.id;
           const user = conv.otherParticipant;
-          
+
           return (
             <Link
               key={conv.id}
@@ -124,13 +188,21 @@ function DirectMessageList({ workspaceId, onStartNewConversation }) {
                     {user.fullName || user.username}
                   </span>
                   {conv.lastMessage && (
-                    <span className={`text-xs ${isActive ? "text-blue-200" : "text-slate-500"}`}>
+                    <span
+                      className={`text-xs ${
+                        isActive ? "text-blue-200" : "text-slate-500"
+                      }`}
+                    >
                       {formatTimeAgo(conv.lastMessage.createdAt)}
                     </span>
                   )}
                 </div>
                 {conv.lastMessage && (
-                  <p className={`truncate text-xs ${isActive ? "text-blue-200" : "text-slate-500"}`}>
+                  <p
+                    className={`truncate text-xs ${
+                      isActive ? "text-blue-200" : "text-slate-500"
+                    }`}
+                  >
                     {conv.lastMessage.isDeleted
                       ? "Tin nhắn đã bị xóa"
                       : conv.lastMessage.content || "📎 Đính kèm"}
@@ -221,8 +293,12 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-      <div className="fixed inset-0" onClick={onClose} aria-label="Close modal" />
-      
+      <div
+        className="fixed inset-0"
+        onClick={onClose}
+        aria-label="Close modal"
+      />
+
       <div className="relative w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
@@ -232,8 +308,18 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
             aria-label="Close modal"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -254,7 +340,12 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
               viewBox="0 0 24 24"
               stroke="currentColor"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
           </div>
         </div>
@@ -265,7 +356,9 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
             <div className="p-4 text-center text-slate-400">Đang tải...</div>
           ) : filteredMembers.length === 0 ? (
             <div className="p-4 text-center text-slate-400">
-              {search ? "Không tìm thấy thành viên" : "Không có thành viên khác"}
+              {search
+                ? "Không tìm thấy thành viên"
+                : "Không có thành viên khác"}
             </div>
           ) : (
             filteredMembers.map((member) => (
@@ -282,7 +375,9 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
                   <p className="truncate font-medium text-white">
                     {member.fullName || member.username}
                   </p>
-                  <p className="truncate text-sm text-slate-400">{member.email}</p>
+                  <p className="truncate text-sm text-slate-400">
+                    {member.email}
+                  </p>
                 </div>
               </button>
             ))
@@ -294,4 +389,3 @@ function NewDMModal({ workspaceId, onClose, onSuccess }) {
 }
 
 export default DirectMessageList;
-

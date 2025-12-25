@@ -108,6 +108,16 @@ export function useDMSocket(token, conversationId, workspaceId) {
       upsertMessage(message);
     });
 
+    // Listen for conversation list updates (e.g., new conversation created)
+    socket.on("dm:conversation:updated", (data) => {
+      console.log("Received dm:conversation:updated event:", data);
+      // Trigger a custom event that can be listened to by components
+      // This allows components to refresh their conversation list
+      window.dispatchEvent(
+        new CustomEvent("dm:conversation:updated", { detail: data })
+      );
+    });
+
     socket.on("dm:message:deleted", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((m) =>
@@ -232,35 +242,38 @@ export function useDMSocket(token, conversationId, workspaceId) {
     (messageId) => {
       if (!socketRef.current || !conversationId) return;
       socketRef.current.emit("dm:message:delete", {
+        workspaceId,
         conversationId,
         messageId,
       });
     },
-    [conversationId]
+    [conversationId, workspaceId]
   );
 
   const addReaction = useCallback(
     (messageId, emoji) => {
       if (!socketRef.current || !conversationId) return;
       socketRef.current.emit("dm:reaction:add", {
+        workspaceId,
         conversationId,
         messageId,
         reaction: { emoji },
       });
     },
-    [conversationId]
+    [conversationId, workspaceId]
   );
 
   const removeReaction = useCallback(
     (messageId, emoji) => {
       if (!socketRef.current || !conversationId) return;
       socketRef.current.emit("dm:reaction:remove", {
+        workspaceId,
         conversationId,
         messageId,
         emoji,
       });
     },
-    [conversationId]
+    [conversationId, workspaceId]
   );
 
   const startTyping = useCallback(() => {
@@ -294,8 +307,8 @@ export function useDMSocket(token, conversationId, workspaceId) {
 
   const markAsRead = useCallback(() => {
     if (!socketRef.current || !conversationId) return;
-    socketRef.current.emit("dm:messages:read", { conversationId });
-  }, [conversationId]);
+    socketRef.current.emit("dm:messages:read", { workspaceId, conversationId });
+  }, [conversationId, workspaceId]);
 
   // Set initial messages (from REST API)
   const setInitialMessages = useCallback((initialMessages) => {
