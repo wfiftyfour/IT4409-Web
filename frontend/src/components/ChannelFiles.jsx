@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import useAuth from "../hooks/useAuth";
 
 function ChannelFiles({ channelId, isChannelAdmin }) {
-  const { authFetch } = useAuth();
+  const { authFetch, currentUser } = useAuth();
   const [items, setItems] = useState([]);
   const [currentFolder, setCurrentFolder] = useState(null);
   const [breadcrumbs, setBreadcrumbs] = useState([{ id: null, name: "Files" }]);
@@ -10,10 +10,39 @@ function ChannelFiles({ channelId, isChannelAdmin }) {
   const [isUploading, setIsUploading] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [renamingItem, setRenamingItem] = useState(null);
+  const [newName, setNewName] = useState("");
+  const [previewFile, setPreviewFile] = useState(null);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     fetchMaterials();
   }, [channelId, currentFolder]);
+
+  // Đóng menu khi click bên ngoài
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (openMenuId && !event.target.closest('.relative')) {
+        setOpenMenuId(null);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openMenuId]);
+
+  // Đóng preview khi nhấn ESC
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && previewFile) {
+        closePreview();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [previewFile]);
 
   const fetchMaterials = async () => {
     setIsLoading(true);
@@ -130,6 +159,89 @@ function ChannelFiles({ channelId, isChannelAdmin }) {
     } catch (err) {
       alert(err.message || "Failed to delete folder");
     }
+  };
+
+  const handleRename = async (item) => {
+    if (!newName.trim()) {
+      alert("Please enter a name");
+      return;
+    }
+
+    try {
+      const endpoint = item.type === 'folder'
+        ? `/api/channels/${channelId}/materials/folders/${item.id}/rename`
+        : `/api/channels/${channelId}/materials/files/${item.id}/rename`;
+
+      await authFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify({ name: newName }),
+      });
+
+      setRenamingItem(null);
+      setNewName("");
+      await fetchMaterials();
+    } catch (err) {
+      alert(err.message || "Failed to rename");
+    }
+  };
+
+  const startRename = (item) => {
+    setRenamingItem(item);
+    setNewName(item.name || item.fileName);
+    setOpenMenuId(null);
+  };
+
+  const cancelRename = () => {
+    setRenamingItem(null);
+    setNewName("");
+  };
+
+  const handleDownload = async (item) => {
+    try {
+      // Tải file từ S3 URL
+      const response = await fetch(item.fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = item.fileName || 'download';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      setOpenMenuId(null);
+    } catch (err) {
+      console.error('Download failed:', err);
+      // Fallback: mở trong tab mới
+      window.open(item.fileUrl, '_blank');
+      setOpenMenuId(null);
+    }
+  };
+
+  const handlePreview = (item) => {
+    // Check if file can be previewed in modal
+    const canPreviewInModal =
+      item.mimeType?.startsWith('image/') ||
+      item.mimeType?.includes('pdf') ||
+      item.mimeType?.startsWith('video/') ||
+      item.mimeType?.startsWith('audio/') ||
+      item.mimeType?.startsWith('text/') ||
+      ['txt', 'md', 'json', 'xml', 'csv'].includes(item.extension);
+
+    // Office files - preview trong modal với Google Docs Viewer (nhanh hơn)
+    const isOfficeFile = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(item.extension);
+
+    if (canPreviewInModal || isOfficeFile) {
+      setPreviewFile(item);
+    } else {
+      // Download directly for unsupported types
+      handleDownload(item);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewFile(null);
+    setImageError(false);
   };
 
   const openFolder = (folder) => {
@@ -268,37 +380,35 @@ function ChannelFiles({ channelId, isChannelAdmin }) {
             ))}
           </div>
 
-          {/* Action buttons */}
-          {isChannelAdmin && (
-            <div className="flex items-center gap-2">
-              <label className="cursor-pointer">
-                <input
-                  id="file-input"
-                  type="file"
-                  multiple
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  disabled={isUploading}
-                />
-                <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  {isUploading ? "Uploading..." : "Upload"}
-                </div>
-              </label>
-
-              <button
-                onClick={() => setShowCreateFolder(!showCreateFolder)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
+          {/* Action buttons - Tất cả member đều có thể upload và tạo folder */}
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer">
+              <input
+                id="file-input"
+                type="file"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+                disabled={isUploading}
+              />
+              <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                New folder
-              </button>
-            </div>
-          )}
+                {isUploading ? "Uploading..." : "Upload"}
+              </div>
+            </label>
+
+            <button
+              onClick={() => setShowCreateFolder(!showCreateFolder)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              New folder
+            </button>
+          </div>
         </div>
 
         {/* Create folder input */}
@@ -346,9 +456,7 @@ function ChannelFiles({ channelId, isChannelAdmin }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <p className="text-sm font-medium">This folder is empty</p>
-            {isChannelAdmin && (
-              <p className="text-xs mt-1">Upload files or create folders to get started</p>
-            )}
+            <p className="text-xs mt-1">Upload files or create folders to get started</p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
@@ -366,81 +474,330 @@ function ChannelFiles({ channelId, isChannelAdmin }) {
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   File size
                 </th>
-                {isChannelAdmin && (
-                  <th scope="col" className="relative px-6 py-3">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                )}
+                <th scope="col" className="relative px-6 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => item.type === 'folder' ? openFolder(item) : null}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0">
-                        {getFileIcon(item)}
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">
-                          {item.name || item.fileName}
+              {items.map((item) => {
+                const isRenaming = renamingItem?.id === item.id;
+
+                return (
+                  <tr
+                    key={item.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => {
+                      if (isRenaming) return;
+                      if (item.type === 'folder') {
+                        openFolder(item);
+                      } else {
+                        handlePreview(item);
+                      }
+                    }}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          {getFileIcon(item)}
+                        </div>
+                        <div className="ml-4">
+                          {isRenaming ? (
+                            <input
+                              type="text"
+                              value={newName}
+                              onChange={(e) => setNewName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRename(item);
+                                if (e.key === 'Escape') cancelRename();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-2 py-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              autoFocus
+                            />
+                          ) : (
+                            <div className="text-sm font-medium text-gray-900">
+                              {item.name || item.fileName}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(item.updatedAt || item.createdAt)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {item.uploader?.fullName || item.creator?.fullName || "-"}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {item.type === 'file' ? formatFileSize(item.fileSize) : formatFileSize(item.totalSize)}
-                  </td>
-                  {isChannelAdmin && (
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
-                        {item.type === 'file' && (
-                          <a
-                            href={item.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-900"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                          </a>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (item.type === 'folder') {
-                              handleDeleteFolder(item.id, item.name);
-                            } else {
-                              handleDeleteFile(item.id, item.fileName || item.name);
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(item.updatedAt || item.createdAt)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.uploader?.fullName || item.creator?.fullName || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.type === 'file' ? formatFileSize(item.fileSize) : formatFileSize(item.totalSize)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {isRenaming ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRename(item);
+                            }}
+                            className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelRename();
+                            }}
+                            className="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(openMenuId === item.id ? null : item.id);
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+                          >
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                            </svg>
+                          </button>
+
+                          {openMenuId === item.id && (
+                            <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
+                              <div className="py-1">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startRename(item);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Rename
+                                </button>
+
+                                {item.type === 'file' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDownload(item);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Download
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(null);
+                                    if (item.type === 'folder') {
+                                      handleDeleteFolder(item.id, item.name);
+                                    } else {
+                                      handleDeleteFile(item.id, item.fileName || item.name);
+                                    }
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {previewFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+          onClick={closePreview}
+        >
+          <div
+            className="relative max-w-7xl max-h-[90vh] w-full mx-4 bg-white rounded-lg shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0">
+                  {getFileIcon(previewFile)}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {previewFile.fileName}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {formatFileSize(previewFile.fileSize)} • Uploaded by {previewFile.uploader?.fullName || 'Unknown'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownload(previewFile)}
+                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg"
+                  title="Download"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+                <button
+                  onClick={closePreview}
+                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg"
+                  title="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Content */}
+            <div className="p-6 overflow-auto max-h-[calc(90vh-100px)]">
+              {previewFile.mimeType?.startsWith('image/') ? (
+                // Image Preview
+                <div className="flex items-center justify-center">
+                  {imageError ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                      <svg className="w-24 h-24 mb-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-lg font-medium mb-2">Failed to load image</p>
+                      <p className="text-sm mb-6">The image could not be loaded. It may be corrupted or inaccessible.</p>
+                      <button
+                        onClick={() => handleDownload(previewFile)}
+                        className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                      >
+                        Download File
+                      </button>
+                    </div>
+                  ) : (
+                    <img
+                      src={previewFile.fileUrl}
+                      alt={previewFile.fileName}
+                      className="max-w-full max-h-[70vh] object-contain"
+                      onError={() => setImageError(true)}
+                    />
+                  )}
+                </div>
+              ) : previewFile.mimeType?.includes('pdf') ? (
+                // PDF Preview
+                <iframe
+                  src={previewFile.fileUrl}
+                  className="w-full h-[70vh] border-0"
+                  title={previewFile.fileName}
+                />
+              ) : previewFile.mimeType?.startsWith('video/') ? (
+                // Video Preview
+                <div className="flex items-center justify-center">
+                  <video
+                    src={previewFile.fileUrl}
+                    controls
+                    className="max-w-full max-h-[70vh]"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+              ) : previewFile.mimeType?.startsWith('audio/') ? (
+                // Audio Preview
+                <div className="flex flex-col items-center justify-center py-12">
+                  <svg className="w-24 h-24 text-gray-400 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <audio
+                    src={previewFile.fileUrl}
+                    controls
+                    className="w-full max-w-md"
+                  >
+                    Your browser does not support the audio tag.
+                  </audio>
+                </div>
+              ) : previewFile.mimeType?.startsWith('text/') ||
+                 previewFile.extension === 'txt' ||
+                 previewFile.extension === 'md' ||
+                 previewFile.extension === 'json' ||
+                 previewFile.extension === 'xml' ||
+                 previewFile.extension === 'csv' ? (
+                // Text File Preview
+                <iframe
+                  src={previewFile.fileUrl}
+                  className="w-full h-[70vh] border border-gray-300 rounded"
+                  title={previewFile.fileName}
+                />
+              ) : ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(previewFile.extension) ? (
+                // Office Files Preview using Google Docs Viewer
+                <div className="w-full h-[70vh]">
+                  <iframe
+                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewFile.fileUrl)}&embedded=true`}
+                    className="w-full h-full border-0"
+                    title={previewFile.fileName}
+                  />
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Tip:</strong> If the preview is slow or doesn't load, you can{' '}
+                      <button
+                        onClick={() => handleDownload(previewFile)}
+                        className="underline font-semibold hover:text-blue-900"
+                      >
+                        download the file
+                      </button>{' '}
+                      or open it in{' '}
+                      <a
+                        href={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewFile.fileUrl)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline font-semibold hover:text-blue-900"
+                      >
+                        Microsoft Office Online
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                // Fallback for unsupported file types
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                  <svg className="w-24 h-24 mb-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-lg font-medium mb-2">Preview not available</p>
+                  <p className="text-sm mb-6">This file type cannot be previewed in the browser</p>
+                  <button
+                    onClick={() => handleDownload(previewFile)}
+                    className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    Download File
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

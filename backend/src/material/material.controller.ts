@@ -116,22 +116,47 @@ export class MaterialController {
     );
   }
 
-  // 📌 DELETE FILE (Admin hoặc Owner)
+  // 📌 RENAME FILE
+  @Post('files/:fileId/rename')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.CHANNEL_MEMBER, ROLES.CHANNEL_ADMIN)
+  async renameFile(
+    @Param('channelId') channelId: string,
+    @Param('fileId') fileId: string,
+    @Body('name') newName: string,
+  ) {
+    if (!newName) throw new BadRequestException('New name is required');
+    return this.materialService.renameFile(channelId, fileId, newName);
+  }
+
+  // 📌 RENAME FOLDER
+  @Post('folders/:folderId/rename')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(ROLES.CHANNEL_MEMBER, ROLES.CHANNEL_ADMIN)
+  async renameFolder(
+    @Param('channelId') channelId: string,
+    @Param('folderId') folderId: string,
+    @Body('name') newName: string,
+  ) {
+    if (!newName) throw new BadRequestException('New name is required');
+    return this.materialService.renameFolder(channelId, folderId, newName);
+  }
+
+  // 📌 DELETE FILE (Mọi member đều có thể xóa)
   @Delete('files/:fileId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(ROLES.CHANNEL_MEMBER, ROLES.CHANNEL_ADMIN)
   async removeFile(
     @Param('channelId') channelId: string,
     @Param('fileId') fileId: string,
-    @Req() req,
   ) {
-    return this.materialService.deleteFile(channelId, fileId, req.user);
+    return this.materialService.deleteFile(channelId, fileId);
   }
 
-  // 📌 DELETE FOLDER (xóa recursive)
+  // 📌 DELETE FOLDER (Mọi member đều có thể xóa)
   @Delete('folders/:folderId')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.CHANNEL_ADMIN, ROLES.CHANNEL_ADMIN)
+  @Roles(ROLES.CHANNEL_MEMBER, ROLES.CHANNEL_ADMIN)
   async removeFolder(
     @Param('channelId') channelId: string,
     @Param('folderId') folderId: string,

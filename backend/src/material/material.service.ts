@@ -220,9 +220,9 @@ export class MaterialService {
   }
 
   // ============================================================
-  // DELETE FILE
+  // DELETE FILE (Mọi member đều có thể xóa)
   // ============================================================
-  async deleteFile(channelId: string, fileId: string, user: any) {
+  async deleteFile(channelId: string, fileId: string) {
     const record = await this.prisma.file.findUnique({
       where: { id: fileId },
     });
@@ -230,10 +230,6 @@ export class MaterialService {
     if (!record) throw new NotFoundException('File not found');
     if (record.channelId !== channelId)
       throw new ForbiddenException('File does not belong to this channel');
-
-    // Rule: admin hoặc chính chủ
-    if (record.uploadedBy !== user.id && !user.roles.includes('CHANNEL_ADMIN'))
-      throw new ForbiddenException('Not allowed to delete this file');
 
     // Xóa trên S3
     try {
@@ -252,7 +248,52 @@ export class MaterialService {
 
     await this.prisma.file.delete({ where: { id: fileId } });
 
-    return { message: 'File deleted' };
+    return { message: 'File deleted successfully' };
+  }
+
+  // ============================================================
+  // RENAME FILE
+  // ============================================================
+  async renameFile(channelId: string, fileId: string, newName: string) {
+    const file = await this.prisma.file.findUnique({
+      where: { id: fileId },
+    });
+
+    if (!file) throw new NotFoundException('File not found');
+    if (file.channelId !== channelId)
+      throw new ForbiddenException('File does not belong to this channel');
+
+    // Giữ nguyên extension
+    const parts = newName.split('.');
+    const hasExtension = parts.length > 1;
+    const finalName = hasExtension ? newName : `${newName}.${file.extension}`;
+
+    const updated = await this.prisma.file.update({
+      where: { id: fileId },
+      data: { fileName: finalName },
+    });
+
+    return updated;
+  }
+
+  // ============================================================
+  // RENAME FOLDER
+  // ============================================================
+  async renameFolder(channelId: string, folderId: string, newName: string) {
+    const folder = await this.prisma.folder.findUnique({
+      where: { id: folderId },
+    });
+
+    if (!folder) throw new NotFoundException('Folder not found');
+    if (folder.channelId !== channelId)
+      throw new ForbiddenException('Folder does not belong to this channel');
+
+    const updated = await this.prisma.folder.update({
+      where: { id: folderId },
+      data: { name: newName },
+    });
+
+    return updated;
   }
 
   // ============================================================
