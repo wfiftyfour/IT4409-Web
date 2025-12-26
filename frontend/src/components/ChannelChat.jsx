@@ -4,6 +4,9 @@ import { useChatSocket } from "../hooks/useChatSocket";
 import { useToast } from "../contexts/ToastContext";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
+import ChatSearchBar from "./ChatSearchBar";
+import { uploadMessageFiles, searchChannelMessages } from "../api";
+import { Search } from "lucide-react";
 
 function ChannelChat({ channelId, channelName, members = [] }) {
   const { accessToken, currentUser, authFetch } = useAuth();
@@ -27,6 +30,9 @@ function ChannelChat({ channelId, channelName, members = [] }) {
   const [page, setPage] = useState(1);
   const [highlightMessageId, setHighlightMessageId] = useState(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const {
     isConnected,
@@ -43,6 +49,7 @@ function ChannelChat({ channelId, channelName, members = [] }) {
     stopTyping,
     markAsRead,
     setInitialMessages,
+    updateMessage,
   } = useChatSocket(accessToken, channelId);
 
   // Reset local pagination and message cache when switching channels
@@ -174,6 +181,28 @@ function ChannelChat({ channelId, channelName, members = [] }) {
     setReplyTo(null);
   };
 
+  // Handle send message with files
+  const handleSendWithFiles = async (content, replyToId, mentionedUserIds, files) => {
+    try {
+      // Send text message first
+      const message = await sendMessage(content, replyToId, mentionedUserIds);
+      
+      // If has files, upload them
+      if (files.length > 0 && message?.id) {
+        const result = await uploadMessageFiles(channelId, message.id, files, authFetch);
+        // Update the message in local state with attachments
+        if (result?.message) {
+          updateMessage(result.message);
+        }
+      }
+      
+      setReplyTo(null);
+    } catch (error) {
+      console.error("Failed to send message with files:", error);
+      toast.error("Không thể gửi tin nhắn với file đính kèm");
+    }
+  };
+
   // Handle delete message
   const handleDelete = (messageId) => {
     if (window.confirm("Bạn có chắc muốn xóa tin nhắn này?")) {
@@ -185,6 +214,27 @@ function ChannelChat({ channelId, channelName, members = [] }) {
   const handleReply = (message) => {
     setReplyTo(message);
   };
+
+  // Handle search
+  const handleSearch = useCallback(async (query) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = await searchChannelMessages(channelId, query, authFetch);
+      setSearchResults(results);
+    } catch (error) {
+      console.error("Search error:", error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [channelId, authFetch]);
 
   const handleJumpToMessage = async (messageId) => {
     if (!messageId) return;
@@ -365,6 +415,9 @@ function ChannelChat({ channelId, channelName, members = [] }) {
         )}
       </div>
 
+      {/* Search bar */}
+      <ChatSearchBar onSearch={handleSearch} />
+
       {/* Error message */}
       {error && (
         <div className="bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
@@ -416,39 +469,74 @@ function ChannelChat({ channelId, channelName, members = [] }) {
           </div>
         )}
 
-        {/* Messages grouped by date */}
-        {Object.entries(groupedMessages).map(([date, dateMessages]) => (
-          <div key={date}>
-            {/* Date separator */}
-            <div className="sticky top-0 z-10 flex items-center justify-center py-2">
-              <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
-                {formatDateHeader(date)}
-              </div>
+        {/* Messages or Search Results */}
+        {searchQuery ? (
+          // Search results
+          <div className="p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <Search className="h-4 w-4 text-gray-400" />
+              <span className="text-sm text-gray-600">
+                Kết quả tìm kiếm cho "{searchQuery}"
+              </span>
+              {isSearching && (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-indigo-600"></div>
+              )}
             </div>
-
-            {/* Messages */}
-            {dateMessages.map((message) => (
-              <div
-                key={message.id}
-                ref={(el) => {
-                  if (el) messageRefs.current[message.id] = el;
-                }}
-              >
-                <ChatMessage
-                  message={message}
-                  currentUserId={currentUser?.id}
-                  onDelete={handleDelete}
-                  onAddReaction={addReaction}
-                  onRemoveReaction={removeReaction}
-                  onReply={handleReply}
-                  onJumpToMessage={handleJumpToMessage}
-                  isHighlighted={highlightMessageId === message.id}
-                  members={members}
-                />
-              </div>
-            ))}
+            {searchResults.length > 0 ? (
+              searchResults.map((message) => (
+                <div key={message.id} className="mb-2">
+                  <ChatMessage
+                    message={message}
+                    currentUserId={currentUser?.id}
+                    onDelete={handleDelete}
+                    onAddReaction={addReaction}
+                    onRemoveReaction={removeReaction}
+                    onReply={handleReply}
+                    onJumpToMessage={handleJumpToMessage}
+                    isHighlighted={false}
+                    members={members}
+                  />
+                </div>
+              ))
+            ) : !isSearching ? (
+              <p className="text-sm text-gray-500">Không tìm thấy tin nhắn nào</p>
+            ) : null}
           </div>
-        ))}
+        ) : (
+          // Normal messages grouped by date
+          Object.entries(groupedMessages).map(([date, dateMessages]) => (
+            <div key={date}>
+              {/* Date separator */}
+              <div className="sticky top-0 z-10 flex items-center justify-center py-2">
+                <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
+                  {formatDateHeader(date)}
+                </div>
+              </div>
+
+              {/* Messages */}
+              {dateMessages.map((message) => (
+                <div
+                  key={message.id}
+                  ref={(el) => {
+                    if (el) messageRefs.current[message.id] = el;
+                  }}
+                >
+                  <ChatMessage
+                    message={message}
+                    currentUserId={currentUser?.id}
+                    onDelete={handleDelete}
+                    onAddReaction={addReaction}
+                    onRemoveReaction={removeReaction}
+                    onReply={handleReply}
+                    onJumpToMessage={handleJumpToMessage}
+                    isHighlighted={highlightMessageId === message.id}
+                    members={members}
+                  />
+                </div>
+              ))}
+            </div>
+          ))
+        )}
 
         {/* Typing indicator */}
         {otherTypingUsers.length > 0 && (
@@ -508,6 +596,7 @@ function ChannelChat({ channelId, channelName, members = [] }) {
       {/* Input area */}
       <ChatInput
         onSend={handleSend}
+        onSendWithFiles={handleSendWithFiles}
         onTyping={startTyping}
         onStopTyping={stopTyping}
         replyTo={replyTo}

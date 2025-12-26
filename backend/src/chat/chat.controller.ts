@@ -336,4 +336,32 @@ export class ChatController {
     const userId = req.user.id;
     return this.chatService.markAsRead(userId, channelId);
   }
+
+  /**
+   * GET /api/channels/:channelId/chat/search?q=keyword
+   * Tìm kiếm tin nhắn trong channel
+   */
+  @Get('search')
+  @ApiOperation({
+    summary: 'Tìm kiếm tin nhắn trong channel',
+    description: 'Tìm kiếm tin nhắn theo từ khóa trong channel.',
+  })
+  @ApiParam({ name: 'channelId', description: 'ID của channel' })
+  @ApiQuery({ name: 'q', description: 'Từ khóa tìm kiếm', required: true })
+  @ApiResponse({
+    status: 200,
+    description: 'Danh sách tin nhắn khớp',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Không có quyền (không phải member)',
+  })
+  async searchMessages(
+    @Req() req: any,
+    @Param('channelId') channelId: string,
+    @Query('q') query: string,
+  ) {
+    const userId = req.user.id;
+    return this.chatService.searchChannelMessages(userId, channelId, query);
+  }
 }

@@ -9,12 +9,15 @@ function ChatInput({
   members = [],
   disabled = false,
   placeholder = "Nhập tin nhắn... (@ để mention)",
+  onSendWithFiles, // New prop for sending with files
 }) {
   const [content, setContent] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [pendingFiles, setPendingFiles] = useState([]); // New state for files
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const mentionStartRef = useRef(null);
 
   const filteredMembers = members.filter(
@@ -109,7 +112,7 @@ function ChatInput({
   };
 
   const handleSend = () => {
-    if (!content.trim() || disabled) return;
+    if ((!content.trim() && pendingFiles.length === 0) || disabled) return;
 
     // Extract mentioned userIds from content
     const mentionedUserIds = [];
@@ -123,10 +126,32 @@ function ChatInput({
       }
     }
 
-    onSend(content.trim(), replyTo?.id, mentionedUserIds);
+    // If has files, use new callback
+    if (pendingFiles.length > 0 && onSendWithFiles) {
+      onSendWithFiles(content.trim(), replyTo?.id, mentionedUserIds, pendingFiles);
+    } else {
+      onSend(content.trim(), replyTo?.id, mentionedUserIds);
+    }
+
     setContent("");
+    setPendingFiles([]);
     onStopTyping();
     onCancelReply?.();
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+      setPendingFiles(prev => [...prev, ...files]);
+    }
+    // Reset input
+    e.target.value = null;
+  };
+
+  // Remove file from pending list
+  const removeFile = (index) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -217,6 +242,36 @@ function ChatInput({
         {/* Text input */}
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
+            {/* File preview */}
+            {pendingFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pendingFiles.map((file, index) => (
+                  <div key={index} className="relative">
+                    {file.type.startsWith('image/') ? (
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        className="h-16 w-16 rounded-lg object-cover border border-gray-200"
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center">
+                        <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => removeFile(index)}
+                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1 max-w-16 truncate">{file.name}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <textarea
               ref={inputRef}
               value={content}
@@ -238,10 +293,30 @@ function ChatInput({
             />
           </div>
 
+          {/* File upload button */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-gray-300 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-50"
+            title="Đính kèm file"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+
           {/* Send button */}
           <button
             onClick={handleSend}
-            disabled={!content.trim() || disabled}
+            disabled={(!content.trim() && pendingFiles.length === 0) || disabled}
             className="flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-indigo-600 text-white transition-colors hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             <svg
