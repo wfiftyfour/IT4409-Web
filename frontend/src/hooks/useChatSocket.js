@@ -198,23 +198,38 @@ export function useChatSocket(token, channelId) {
   // Actions
   const sendMessage = useCallback(
     (content, replyToId = null, mentionedUserIds = [], attachmentUrls = []) => {
-      if (!socketRef.current || !channelId) return;
+      return new Promise((resolve, reject) => {
+        if (!socketRef.current || !channelId) {
+          reject(new Error("Socket not connected or channelId missing"));
+          return;
+        }
 
-      socketRef.current.emit("message:send", {
-        channelId,
-        message: {
-          content,
-          replyToId,
-          mentionedUserIds,
-          attachmentUrls,
-        },
+        socketRef.current.emit(
+          "message:send",
+          {
+            channelId,
+            message: {
+              content,
+              replyToId,
+              mentionedUserIds,
+              attachmentUrls,
+            },
+          },
+          (response) => {
+            if (response && response.status === "ok") {
+              resolve(response.data);
+            } else {
+              reject(new Error(response?.message || "Failed to send message"));
+            }
+          }
+        );
+
+        // Stop typing when sending
+        if (isTypingRef.current) {
+          socketRef.current.emit("typing:stop", { channelId });
+          isTypingRef.current = false;
+        }
       });
-
-      // Stop typing when sending
-      if (isTypingRef.current) {
-        socketRef.current.emit("typing:stop", { channelId });
-        isTypingRef.current = false;
-      }
     },
     [channelId]
   );
@@ -290,6 +305,13 @@ export function useChatSocket(token, channelId) {
     setMessages(initialMessages);
   }, []);
 
+  // Update a specific message (e.g., after adding attachments)
+  const updateMessage = useCallback((updatedMessage) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
+    );
+  }, []);
+
   return {
     isConnected,
     isJoined,
@@ -305,6 +327,7 @@ export function useChatSocket(token, channelId) {
     stopTyping,
     markAsRead,
     setInitialMessages,
+    updateMessage,
   };
 }
 

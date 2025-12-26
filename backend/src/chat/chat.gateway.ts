@@ -320,12 +320,15 @@ export class ChatGateway
       this.logger.log(
         `Message sent by ${user.username} in channel ${channelId}`,
       );
+      
+      return { status: 'ok', data: newMessage };
     } catch (error) {
       this.logger.error(`Error sending message: ${error.message}`);
       client.emit('error', {
         event: 'message:send',
         message: error.message || 'Không thể gửi tin nhắn',
       });
+      return { status: 'error', message: error.message || 'Không thể gửi tin nhắn' };
     }
   }
 
@@ -859,12 +862,15 @@ export class ChatGateway
       });
 
       this.logger.log(`Direct message sent by ${user.username}`);
+      
+      return { status: 'ok', data: newMessage };
     } catch (error) {
       this.logger.error(`Error sending direct message: ${error.message}`);
       client.emit('error', {
         event: 'dm:message:send',
         message: error.message || 'Không thể gửi tin nhắn',
       });
+      return { status: 'error', message: error.message || 'Không thể gửi tin nhắn' };
     }
   }
 

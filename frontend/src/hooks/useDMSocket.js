@@ -246,22 +246,37 @@ export function useDMSocket(token, conversationId, workspaceId) {
   // Actions
   const sendMessage = useCallback(
     (content, recipientId, replyToId = null, attachmentUrls = []) => {
-      if (!socketRef.current || !workspaceId) return;
+      return new Promise((resolve, reject) => {
+        if (!socketRef.current || !workspaceId) {
+          reject(new Error("Socket not connected or workspaceId missing"));
+          return;
+        }
 
-      socketRef.current.emit("dm:message:send", {
-        workspaceId,
-        conversationId,
-        recipientId,
-        content,
-        replyToId,
-        attachmentUrls,
+        socketRef.current.emit(
+          "dm:message:send",
+          {
+            workspaceId,
+            conversationId,
+            recipientId,
+            content,
+            replyToId,
+            attachmentUrls,
+          },
+          (response) => {
+            if (response && response.status === "ok") {
+              resolve(response.data);
+            } else {
+              reject(new Error(response?.message || "Failed to send message"));
+            }
+          }
+        );
+
+        // Stop typing when sending
+        if (isTypingRef.current) {
+          socketRef.current.emit("dm:typing:stop", { conversationId });
+          isTypingRef.current = false;
+        }
       });
-
-      // Stop typing when sending
-      if (isTypingRef.current) {
-        socketRef.current.emit("dm:typing:stop", { conversationId });
-        isTypingRef.current = false;
-      }
     },
     [conversationId, workspaceId]
   );
@@ -348,6 +363,13 @@ export function useDMSocket(token, conversationId, workspaceId) {
     }
   }, []);
 
+  // Update a specific message (e.g., after adding attachments)
+  const updateMessage = useCallback((updatedMessage) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m))
+    );
+  }, []);
+
   return {
     isConnected,
     isJoined,
@@ -363,6 +385,7 @@ export function useDMSocket(token, conversationId, workspaceId) {
     stopTyping,
     markAsRead,
     setInitialMessages,
+    updateMessage,
   };
 }
 

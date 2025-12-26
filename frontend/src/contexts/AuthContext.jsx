@@ -1,6 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login as loginApi, register as registerApi, refresh as refreshApi, logout as logoutApi, request } from "../api.js";
+import { API_URL, login as loginApi, register as registerApi, refresh as refreshApi, logout as logoutApi, request } from "../api.js";
 
 export const AuthContext = createContext(null);
 
@@ -120,6 +120,51 @@ export function AuthProvider({ children }) {
     [accessToken, logout, refreshWithRedirect],
   );
 
+  const authFetchRaw = useCallback(
+    async (path, options = {}) => {
+      const makeRequest = (token) =>
+        fetch(`${API_URL}${path}`,
+          {
+            method: options.method ?? "GET",
+            credentials: options.credentials ?? "include",
+            body: options.body,
+            headers: {
+              ...(options.headers || {}),
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+      let tokenToUse = accessToken;
+      if (!tokenToUse) {
+        tokenToUse = await refreshWithRedirect().catch(() => null);
+      }
+      if (!tokenToUse) {
+        await logout();
+        throw new Error("Phiên đăng nhập đã hết hạn.");
+      }
+
+      let response = await makeRequest(tokenToUse);
+      if (response.status === 401) {
+        const newToken = await refreshWithRedirect().catch(() => null);
+        if (!newToken) {
+          await logout();
+          throw new Error("Phiên đăng nhập đã hết hạn.");
+        }
+        response = await makeRequest(newToken);
+      }
+
+      if (!response.ok) {
+        const error = new Error("Có lỗi xảy ra, hãy thử lại.");
+        error.status = response.status;
+        throw error;
+      }
+
+      return response;
+    },
+    [accessToken, logout, refreshWithRedirect],
+  );
+
   const value = useMemo(
     () => ({
       accessToken,
@@ -128,9 +173,10 @@ export function AuthProvider({ children }) {
       register,
       logout,
       authFetch,
+      authFetchRaw,
       updateCurrentUser,
     }),
-    [accessToken, authFetch, currentUser, login, logout, register, updateCurrentUser],
+    [accessToken, authFetch, authFetchRaw, currentUser, login, logout, register, updateCurrentUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

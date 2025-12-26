@@ -430,3 +430,37 @@ export function markDirectConversationAsRead(
     }
   );
 }
+
+// Upload files for message
+export function uploadMessageFiles(channelId, messageId, files, fetcher = request) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+
+  return fetcher(`/api/upload/channel/${channelId}/messages/${messageId}/files`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+// Upload files for direct message
+export function uploadDirectMessageFiles(messageId, files, fetcher = request) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+
+  return fetcher(`/api/upload/direct/messages/${messageId}/files`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+// Search messages in channel
+export function searchChannelMessages(channelId, query, fetcher = request) {
+  const params = new URLSearchParams({ q: query });
+  return fetcher(`/api/channels/${channelId}/chat/search?${params}`);
+}
+
+// Search messages in direct conversation
+export function searchDirectMessages(workspaceId, conversationId, query, fetcher = request) {
+  const params = new URLSearchParams({ q: query });
+  return fetcher(`/api/workspaces/${workspaceId}/direct-messages/conversations/${conversationId}/search?${params}`);
+}
