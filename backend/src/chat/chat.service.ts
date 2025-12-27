@@ -1247,9 +1247,7 @@ export class ChatService {
     }
 
     // 3. Lấy hoặc tạo conversation
-    let conversation: Prisma.ConversationGetPayload<{
-      include: { participants: true };
-    }> | null;
+    let conversation: any | null;
     if (conversationId) {
       // Kiểm tra conversation tồn tại và user có quyền
       conversation = await this.prisma.conversation.findUnique({
@@ -1898,5 +1896,291 @@ export class ChatService {
     return {
       message: 'Đã xóa reaction thành công',
     };
+  }
+
+  /**
+   * Tìm kiếm tin nhắn trong channel
+   */
+  async searchChannelMessages(
+    userId: string,
+    channelId: string,
+    keyword: string,
+  ) {
+    // Kiểm tra quyền
+    const isMember = await this.isChannelMember(userId, channelId);
+    if (!isMember) {
+      throw new ForbiddenException('Bạn không phải thành viên của channel này');
+    }
+
+    // Tìm conversation của channel
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { channelId, type: 'CHANNEL' },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    // Tìm tin nhắn chứa keyword
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId: conversation.id,
+        content: {
+          contains: keyword,
+        },
+        isDeleted: false,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+          },
+        },
+        mentions: {
+          include: {
+            mentionedUser: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+              },
+            },
+          },
+        },
+        reactable: {
+          include: {
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                  },
+                },
+              },
+            },
+            fileAttachments: true,
+          },
+        },
+        replyTo: {
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // Giới hạn kết quả
+    });
+
+    return messages.map((msg) => this.mapMessageToDto(msg));
+  }
+
+  /**
+   * Tìm kiếm tin nhắn trong direct conversation
+   */
+  async searchDirectMessages(
+    userId: string,
+    workspaceId: string,
+    conversationId: string,
+    keyword: string,
+  ) {
+    // Kiểm tra conversation tồn tại và thuộc workspace
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { participants: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation không tồn tại');
+    }
+
+    if (conversation.workspaceId !== workspaceId) {
+      throw new ForbiddenException('Conversation không thuộc workspace này');
+    }
+
+    if (conversation.type !== 'DIRECT') {
+      throw new BadRequestException('Conversation không phải loại DIRECT');
+    }
+
+    // Kiểm tra user có quyền
+    const participantIds = conversation.participants.map((p) => p.userId);
+    if (!participantIds.includes(userId)) {
+      throw new ForbiddenException(
+        'Bạn không phải thành viên của conversation này',
+      );
+    }
+
+    // Tìm tin nhắn chứa keyword
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        content: {
+          contains: keyword,
+        },
+        isDeleted: false,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+          },
+        },
+        mentions: {
+          include: {
+            mentionedUser: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+              },
+            },
+          },
+        },
+        reactable: {
+          include: {
+            reactions: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                  },
+                },
+              },
+            },
+            fileAttachments: true,
+          },
+        },
+        replyTo: {
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    return messages.map((msg) => this.mapMessageToDto(msg));
+  }
+
+  /**
+   * Thêm attachments vào tin nhắn đã tồn tại
+   */
+  async addAttachments(messageId: string, fileUrls: string[]): Promise<MessageResponseDto> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Tin nhắn không tồn tại');
+    }
+
+    await this.prisma.fileAttachment.createMany({
+      data: fileUrls.map((url) => ({
+        reactableId: message.reactableId,
+        fileUrl: url,
+      })),
+    });
+
+    // Return updated message with attachments
+    const fullMessage = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: {
+        sender: true,
+        replyTo: {
+          include: {
+            sender: true,
+          },
+        },
+        mentions: {
+          include: {
+            mentionedUser: true,
+          },
+        },
+        reactable: {
+          include: {
+            reactions: true,
+            fileAttachments: true,
+          },
+        },
+      },
+    });
+
+    return this.mapMessageToDto(fullMessage);
+  }
+
+  /**
+   * Authorize and return attachment URL for download/preview.
+   */
+  async getAttachmentUrlForUser(userId: string, attachmentId: string): Promise<string> {
+    const attachment = await this.prisma.fileAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        reactable: {
+          include: {
+            messages: {
+              include: {
+                conversation: {
+                  include: {
+                    participants: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('File attachment không tồn tại');
+    }
+
+    const message = attachment.reactable?.messages?.[0];
+    if (!message) {
+      throw new NotFoundException('Không tìm thấy tin nhắn của attachment');
+    }
+
+    const conversation = message.conversation;
+    if (!conversation) {
+      throw new NotFoundException('Không tìm thấy conversation của attachment');
+    }
+
+    // Channel conversation: require channel membership
+    if (conversation.channelId) {
+      const isMember = await this.isChannelMember(userId, conversation.channelId);
+      if (!isMember) {
+        throw new ForbiddenException('Bạn không có quyền tải file này');
+      }
+
+      return attachment.fileUrl;
+    }
+
+    // Direct conversation: require participant
+    const participantIds = (conversation.participants || []).map((p) => p.userId);
+    if (!participantIds.includes(userId)) {
+      throw new ForbiddenException('Bạn không có quyền tải file này');
+    }
+
+    return attachment.fileUrl;
   }
 }

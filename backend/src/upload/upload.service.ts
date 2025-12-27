@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { s3Client, S3_BUCKET } from './s3.config';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { File as MulterFile } from 'multer';
 import { createReadStream } from 'fs';
 
@@ -40,5 +40,32 @@ export class UploadService {
 
     const tasks = files.map((file) => this.uploadSingle(file, folder));
     return Promise.all(tasks);
+  }
+
+  /**
+   * Download an object from S3 by its public URL.
+   * Returns the S3 object stream + basic metadata.
+   */
+  async getObjectByUrl(fileUrl: string) {
+    if (!fileUrl) throw new BadRequestException('fileUrl is required');
+
+    let key: string;
+    try {
+      const url = new URL(fileUrl);
+      key = decodeURIComponent(url.pathname.replace(/^\//, ''));
+    } catch {
+      throw new BadRequestException('Invalid fileUrl');
+    }
+
+    if (!key) throw new BadRequestException('Invalid fileUrl');
+
+    const result = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+      }),
+    );
+
+    return { key, result };
   }
 }

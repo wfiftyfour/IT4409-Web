@@ -404,4 +404,39 @@ export class DirectChatController {
       conversationId,
     );
   }
+
+  /**
+   * GET /api/workspaces/:workspaceId/direct-messages/conversations/:conversationId/search?q=keyword
+   * Tìm kiếm tin nhắn trong direct conversation
+   */
+  @Get('conversations/:conversationId/search')
+  @ApiOperation({
+    summary: 'Tìm kiếm tin nhắn trong direct conversation',
+    description: 'Tìm kiếm tin nhắn theo từ khóa trong cuộc trò chuyện 1-1.',
+  })
+  @ApiParam({ name: 'workspaceId', description: 'ID của workspace' })
+  @ApiParam({ name: 'conversationId', description: 'ID của conversation' })
+  @ApiQuery({ name: 'q', description: 'Từ khóa tìm kiếm', required: true })
+  @ApiResponse({
+    status: 200,
+    description: 'Danh sách tin nhắn khớp',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Không có quyền (không phải participant)',
+  })
+  async searchMessages(
+    @Req() req: any,
+    @Param('workspaceId') workspaceId: string,
+    @Param('conversationId') conversationId: string,
+    @Query('q') query: string,
+  ) {
+    const userId = req.user.id;
+    return this.chatService.searchDirectMessages(
+      userId,
+      workspaceId,
+      conversationId,
+      query,
+    );
+  }
 }

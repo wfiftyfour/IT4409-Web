@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   UseInterceptors,
   UploadedFile,
@@ -7,15 +8,66 @@ import {
   BadRequestException,
   Param,
   UseGuards,
+  Req,
+  Inject,
+  forwardRef,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { MaterialService } from '../material/material.service';
+import { ChatService } from '../chat/chat.service';
 import type { File as MulterFile } from 'multer';
+import type { Response } from 'express';
 
 @Controller('upload')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(
+    private readonly uploadService: UploadService,
+    @Inject(forwardRef(() => MaterialService))
+    private readonly materialService: MaterialService,
+    private readonly chatService: ChatService,
+  ) {}
+
+  /**
+   * Force download an attachment via backend (avoids S3/browser inline rendering quirks).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('attachments/:attachmentId/download')
+  async downloadAttachment(
+    @Param('attachmentId') attachmentId: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const fileUrl = await this.chatService.getAttachmentUrlForUser(
+      req.user.id,
+      attachmentId,
+    );
+
+    const { key, result } = await this.uploadService.getObjectByUrl(fileUrl);
+
+    const fileName = decodeURIComponent(key.split('/').pop() || 'file');
+    const encodedFileName = encodeURIComponent(fileName);
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName.replace(/\"/g, '')}"; filename*=UTF-8''${encodedFileName}`,
+    );
+    res.setHeader(
+      'Content-Type',
+      result.ContentType || 'application/octet-stream',
+    );
+
+    // @aws-sdk/client-s3 returns Body as a stream
+    const body: any = result.Body;
+    if (!body || typeof body.pipe !== 'function') {
+      res.status(500).send('Unable to stream file');
+      return;
+    }
+
+    body.pipe(res);
+  }
 
   /** ---------------------------
    *  Avatar cá nhân
@@ -88,13 +140,61 @@ export class UploadController {
     @UploadedFiles() files: MulterFile[],
     @Param('channelId') channelId: string,
     @Param('messageId') messageId: string,
+    @Req() req: any,
   ) {
     if (!files || files.length === 0)
       throw new BadRequestException('At least 1 file required');
 
-    return this.uploadService.uploadMulti(
+    const uploadResults = await this.uploadService.uploadMulti(
       files,
       `channel/${channelId}/messages/${messageId}`,
     );
+
+    // Register files to Material for channel visibility
+    const registerPromises = uploadResults.map((res, idx) =>
+      this.materialService.registerChatFile(
+        channelId,
+        res.url,
+        files[idx].originalname,
+        req.user.id,
+        res.key,
+        files[idx].mimetype,
+        files[idx].size,
+      ),
+    );
+
+    await Promise.all(registerPromises);
+
+    // Attach files to the message (FileAttachment)
+    const fileUrls = uploadResults.map((res) => res.url);
+    const updatedMessage = await this.chatService.addAttachments(messageId, fileUrls);
+
+    return { uploadResults, message: updatedMessage };
+  }
+
+  /** ---------------------------
+   *  Upload file trong tin nhắn Direct (DM)
+   * --------------------------- */
+  @UseGuards(JwtAuthGuard)
+  @Post('direct/messages/:messageId/files')
+  @UseInterceptors(FilesInterceptor('files', 10))
+  async uploadDirectMessageFiles(
+    @UploadedFiles() files: MulterFile[],
+    @Param('messageId') messageId: string,
+  ) {
+    if (!files || files.length === 0)
+      throw new BadRequestException('At least 1 file required');
+
+    // Upload to S3 (or local)
+    const uploadResults = await this.uploadService.uploadMulti(
+      files,
+      `direct/messages/${messageId}`,
+    );
+
+    // Attach files to the message (FileAttachment)
+    const fileUrls = uploadResults.map((res) => res.url);
+    const updatedMessage = await this.chatService.addAttachments(messageId, fileUrls);
+
+    return { uploadResults, message: updatedMessage };
   }
 }
