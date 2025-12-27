@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
@@ -15,6 +17,7 @@ import * as path from 'path';
 export class MaterialService {
   constructor(
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => UploadService))
     private readonly uploadService: UploadService,
   ) {}
 
@@ -333,5 +336,60 @@ export class MaterialService {
     await this.prisma.folder.delete({ where: { id: folderId } });
 
     return { message: 'Folder deleted' };
+  }
+
+  // ============================================================
+  // ENSURE SYSTEM FOLDER (for Chat Uploads)
+  // ============================================================
+  async ensureSystemFolder(channelId: string, folderName: string) {
+    let folder = await this.prisma.folder.findFirst({
+      where: { channelId, name: folderName, parentId: null },
+    });
+
+    if (!folder) {
+      folder = await this.prisma.folder.create({
+        data: {
+          name: folderName,
+          channelId,
+          parentId: null,
+        },
+      });
+    }
+
+    return folder.id;
+  }
+
+  // ============================================================
+  // REGISTER CHAT FILE (for Channel Chat)
+  // ============================================================
+  async registerChatFile(
+    channelId: string,
+    fileUrl: string,
+    fileName: string,
+    uploaderId: string,
+    s3Key: string,
+    mimeType: string,
+    fileSize: number,
+  ) {
+    const folderId = await this.ensureSystemFolder(channelId, 'Chat Uploads');
+
+    const safeName = path.basename(fileName).replace(/[^\w.\- ]/g, '');
+
+    return this.prisma.file.create({
+      data: {
+        channelId,
+        folderId,
+        uploadedBy: uploaderId,
+        fileName: safeName,
+        fileUrl,
+        s3Key,
+        mimeType,
+        fileSize,
+        extension: (() => {
+          const parts = safeName.split('.');
+          return parts.length > 1 ? parts[parts.length - 1] : '';
+        })(),
+      },
+    });
   }
 }

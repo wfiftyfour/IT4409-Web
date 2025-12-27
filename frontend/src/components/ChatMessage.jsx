@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { API_URL } from "../api";
+import useAuth from "../hooks/useAuth";
 
 const EMOJI_LIST = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👏"];
 
@@ -13,6 +15,7 @@ function ChatMessage({
   isHighlighted = false,
   members = [],
 }) {
+  const { authFetchRaw } = useAuth();
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const emojiPickerRef = useRef(null);
@@ -157,33 +160,117 @@ function ChatMessage({
           </p>
         )}
 
-        {/* Attachments */}
+        {/* Attachments - Horizontal scroll list */}
         {message.attachments?.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {message.attachments.map((attachment) => (
-              <a
-                key={attachment.id}
-                href={attachment.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                  />
-                </svg>
-                File đính kèm
-              </a>
-            ))}
+          <div className="mt-2 overflow-x-auto">
+            <div className="flex gap-2 pb-1">
+              {message.attachments.map((attachment) => {
+                const rawUrl = attachment.fileUrl;
+                const urlWithoutQuery = (rawUrl || "").split("?")[0];
+                const fileName =
+                  decodeURIComponent(urlWithoutQuery.split("/").pop() || "") ||
+                  "file";
+                const isImage = urlWithoutQuery.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+                const isVideo = urlWithoutQuery.match(/\.(mp4|webm|ogg)$/i);
+                const isPdf = urlWithoutQuery.match(/\.pdf$/i);
+
+                if (isImage) {
+                  return (
+                    <div key={attachment.id} className="flex-shrink-0">
+                      <img
+                        src={attachment.fileUrl}
+                        alt={fileName}
+                        className="h-48 w-auto max-w-xs rounded-lg object-cover border border-gray-200 cursor-pointer hover:opacity-90 transition"
+                        onClick={() => window.open(attachment.fileUrl, '_blank')}
+                      />
+                    </div>
+                  );
+                } else if (isVideo) {
+                  return (
+                    <div key={attachment.id} className="flex-shrink-0">
+                      <video
+                        src={attachment.fileUrl}
+                        controls
+                        className="h-48 w-auto max-w-xs rounded-lg border border-gray-200"
+                      />
+                    </div>
+                  );
+                } else {
+                  const downloadPath = `/api/upload/attachments/${attachment.id}/download`;
+                  const downloadUrl = `${API_URL}${downloadPath}`;
+
+                  const handleOpenOrDownload = async (e) => {
+                    e.preventDefault();
+                    try {
+                      const response = await authFetchRaw(downloadPath);
+                      const blob = await response.blob();
+                      const objectUrl = URL.createObjectURL(blob);
+
+                      if (isPdf) {
+                        window.open(objectUrl, "_blank", "noopener,noreferrer");
+                        // Delay revoke a bit to avoid cutting off loading in some browsers
+                        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                        return;
+                      }
+
+                      const a = document.createElement("a");
+                      a.href = objectUrl;
+                      a.download = fileName;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(objectUrl);
+                    } catch (err) {
+                      console.error("Failed to download attachment:", err);
+                    }
+                  };
+                  return (
+                    <a
+                      key={attachment.id}
+                      href={downloadUrl}
+                      {...(isPdf
+                        ? { target: "_blank", rel: "noopener noreferrer" }
+                        : { download: fileName })}
+                      onClick={handleOpenOrDownload}
+                      className="flex-shrink-0 flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 hover:border-gray-300 transition w-64"
+                    >
+                      <svg
+                        className="h-5 w-5 flex-shrink-0 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate font-medium">{fileName}</p>
+                        <p className="text-xs text-gray-500">
+                          {isPdf ? "Nhấn để mở" : "Nhấn để tải xuống"}
+                        </p>
+                      </div>
+                      <svg
+                        className="h-4 w-4 flex-shrink-0 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                        />
+                      </svg>
+                    </a>
+                  );
+                }
+              })}
+            </div>
           </div>
         )}
 

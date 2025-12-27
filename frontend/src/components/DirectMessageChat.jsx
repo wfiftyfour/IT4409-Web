@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import useAuth from "../hooks/useAuth";
 import { useDMSocket } from "../hooks/useDMSocket";
-import { getDirectMessages } from "../api";
+import { getDirectMessages, uploadDirectMessageFiles, searchDirectMessages } from "../api";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
+import ChatSearchBar from "./ChatSearchBar";
 import ConfirmationModal from "./ConfirmationModal";
+import { Search } from "lucide-react";
 
 function DirectMessageChat() {
   const { workspaceId, conversationId } = useParams();
@@ -29,6 +31,9 @@ function DirectMessageChat() {
     messageId: null,
   });
   const [highlightMessageId, setHighlightMessageId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const {
     isConnected,
@@ -45,6 +50,7 @@ function DirectMessageChat() {
     stopTyping,
     markAsRead,
     setInitialMessages,
+    updateMessage,
   } = useDMSocket(accessToken, conversationId, workspaceId);
 
   // Presence state that can be updated via global presence events
@@ -228,6 +234,36 @@ function DirectMessageChat() {
     setReplyTo(null);
   };
 
+  // Handle send message with files
+  const handleSendWithFiles = async (content, replyToId, mentionedUserIds, files) => {
+    try {
+      // Send text message first
+      if (!otherUser) return;
+      const message = await sendMessage(content, otherUser.id, replyToId);
+      
+      // If has files, upload them
+      if (files.length > 0 && message?.id) {
+        const result = await uploadDirectMessageFiles(message.id, files, authFetch);
+        // Update the message in local state with attachments
+        if (result?.message) {
+          updateMessage(result.message);
+        }
+      }
+      
+      setReplyTo(null);
+    } catch (error) {
+      console.error("Failed to send message with files:", error);
+      window.dispatchEvent(
+        new CustomEvent("show:toast", {
+          detail: {
+            message: "Không thể gửi tin nhắn với file đính kèm",
+            type: "error",
+          },
+        })
+      );
+    }
+  };
+
   // Handle delete message
   const handleDelete = (messageId) => {
     setDeleteConfirmModal({ isOpen: true, messageId });
@@ -244,6 +280,27 @@ function DirectMessageChat() {
   const handleReply = (message) => {
     setReplyTo(message);
   };
+
+  // Handle search
+  const handleSearch = useCallback(async (query) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = await searchDirectMessages(workspaceId, conversationId, query, authFetch);
+      setSearchResults(results);
+    } catch (error) {
+      console.error("Search error:", error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [workspaceId, conversationId, authFetch]);
 
   const handleJumpToMessage = async (messageId) => {
     if (!messageId) return;
@@ -473,6 +530,9 @@ function DirectMessageChat() {
         </div>
       </div>
 
+      {/* Search bar */}
+      <ChatSearchBar onSearch={handleSearch} />
+
       {/* Error message */}
       {error && (
         <div className="bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
@@ -527,39 +587,74 @@ function DirectMessageChat() {
           </div>
         )}
 
-        {/* Messages grouped by date */}
-        {Object.entries(groupedMessages).map(([date, dateMessages]) => (
-          <div key={date}>
-            {/* Date separator */}
-            <div className="sticky top-0 z-10 flex items-center justify-center py-2">
-              <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
-                {formatDateHeader(date)}
-              </div>
+        {/* Messages or Search Results */}
+        {searchQuery ? (
+          // Search results
+          <div className="p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <Search className="h-4 w-4 text-gray-400" />
+              <span className="text-sm text-gray-600">
+                Kết quả tìm kiếm cho "{searchQuery}"
+              </span>
+              {isSearching && (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-indigo-600"></div>
+              )}
             </div>
-
-            {/* Messages */}
-            {dateMessages.map((message) => (
-              <div
-                key={message.id}
-                ref={(el) => {
-                  if (el) messageRefs.current[message.id] = el;
-                }}
-              >
-                <ChatMessage
-                  message={message}
-                  currentUserId={currentUser?.id}
-                  onDelete={handleDelete}
-                  onAddReaction={addReaction}
-                  onRemoveReaction={removeReaction}
-                  onReply={handleReply}
-                  onJumpToMessage={handleJumpToMessage}
-                  isHighlighted={highlightMessageId === message.id}
-                  members={[]}
-                />
-              </div>
-            ))}
+            {searchResults.length > 0 ? (
+              searchResults.map((message) => (
+                <div key={message.id} className="mb-2">
+                  <ChatMessage
+                    message={message}
+                    currentUserId={currentUser?.id}
+                    onDelete={handleDelete}
+                    onAddReaction={addReaction}
+                    onRemoveReaction={removeReaction}
+                    onReply={handleReply}
+                    onJumpToMessage={handleJumpToMessage}
+                    isHighlighted={false}
+                    members={[]}
+                  />
+                </div>
+              ))
+            ) : !isSearching ? (
+              <p className="text-sm text-gray-500">Không tìm thấy tin nhắn nào</p>
+            ) : null}
           </div>
-        ))}
+        ) : (
+          // Normal messages grouped by date
+          Object.entries(groupedMessages).map(([date, dateMessages]) => (
+            <div key={date}>
+              {/* Date separator */}
+              <div className="sticky top-0 z-10 flex items-center justify-center py-2">
+                <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
+                  {formatDateHeader(date)}
+                </div>
+              </div>
+
+              {/* Messages */}
+              {dateMessages.map((message) => (
+                <div
+                  key={message.id}
+                  ref={(el) => {
+                    if (el) messageRefs.current[message.id] = el;
+                  }}
+                >
+                  <ChatMessage
+                    message={message}
+                    currentUserId={currentUser?.id}
+                    onDelete={handleDelete}
+                    onAddReaction={addReaction}
+                    onRemoveReaction={removeReaction}
+                    onReply={handleReply}
+                    onJumpToMessage={handleJumpToMessage}
+                    isHighlighted={highlightMessageId === message.id}
+                    members={[]}
+                  />
+                </div>
+              ))}
+            </div>
+          ))
+        )}
 
         {/* Typing indicator */}
         {typingUser && (
@@ -616,6 +711,7 @@ function DirectMessageChat() {
       {/* Input area */}
       <ChatInput
         onSend={handleSend}
+        onSendWithFiles={handleSendWithFiles}
         onTyping={startTyping}
         onStopTyping={stopTyping}
         replyTo={replyTo}
